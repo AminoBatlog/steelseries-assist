@@ -6,10 +6,11 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>SteelSeriesAssist</AssemblyName>
     <RootNamespace>SteelSeriesAssist.App</RootNamespace>
-    <Version>0.0.1</Version>
-    <AssemblyVersion>0.0.1.0</AssemblyVersion>
-    <FileVersion>0.0.1.0</FileVersion>
-    <InformationalVersion>0.0.1</InformationalVersion>
+    <Version>0.0.2</Version>
+    <AssemblyVersion>0.0.2.0</AssemblyVersion>
+    <FileVersion>0.0.2.0</FileVersion>
+    <InformationalVersion>0.0.2</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Product>SteelSeries Assist</Product>
     <Description>SteelSeries GG Sonar 的轻量级托盘控制面板</Description>
     <ApplicationIcon>Assets\steelseries-assist.ico</ApplicationIcon>
