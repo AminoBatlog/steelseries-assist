@@ -2,6 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="SteelSeries Assist"
+        Icon="Assets/steelseries-assist.ico"
         Width="460"
         Height="560"
         ResizeMode="NoResize"
@@ -241,6 +242,69 @@
             </Setter>
         </Style>
 
+        <Style x:Key="MuteButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="#1A2027" />
+            <Setter Property="BorderBrush" Value="#3B4652" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ToolTip" Value="{Binding MuteToolTip}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBody" Width="32" Height="32" CornerRadius="7"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <Viewbox Width="18" Height="18">
+                                <Grid Width="24" Height="24">
+                                    <Path x:Name="SpeakerBody" Fill="#CFD7E3"
+                                          Data="M3,9 L7,9 L12,5 L12,19 L7,15 L3,15 Z" />
+                                    <Path x:Name="SoundWaves" Stroke="#CFD7E3" StrokeThickness="1.8"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          Data="M15,9 C16.6,10.4 16.6,13.6 15,15 M18,6.5 C21,9.1 21,14.9 18,17.5" />
+                                    <Path x:Name="MuteSlash" Visibility="Collapsed" Stroke="#FF5359"
+                                          StrokeThickness="2.8" StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round" Data="M4,4 L20,20" />
+                                </Grid>
+                            </Viewbox>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBody" Property="Background" Value="#28313A" />
+                                <Setter TargetName="ButtonBody" Property="BorderBrush" Value="#6675FF" />
+                                <Setter TargetName="SpeakerBody" Property="Fill" Value="White" />
+                                <Setter TargetName="SoundWaves" Property="Stroke" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBody" Property="Background" Value="#303A46" />
+                                <Setter TargetName="ButtonBody" Property="Opacity" Value="0.78" />
+                            </Trigger>
+                            <DataTrigger Binding="{Binding Muted}" Value="True">
+                                <Setter TargetName="MuteSlash" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="ButtonBody" Property="Background" Value="#302126" />
+                                <Setter TargetName="ButtonBody" Property="BorderBrush" Value="#714047" />
+                                <Setter TargetName="SoundWaves" Property="Opacity" Value="0.35" />
+                            </DataTrigger>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding Muted}" Value="True" />
+                                    <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource TemplatedParent}}" Value="True" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter TargetName="ButtonBody" Property="Background" Value="#43282D" />
+                                <Setter TargetName="ButtonBody" Property="BorderBrush" Value="#FF5359" />
+                            </MultiDataTrigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBody" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style x:Key="MainTabItemStyle" TargetType="TabItem">
             <Setter Property="Foreground" Value="#7F8A9A" />
             <Setter Property="Background" Value="Transparent" />
@@ -381,8 +445,10 @@
                                                 PreviewMouseLeftButtonUp="VolumeSlider_MouseUp" />
                                         <TextBlock Grid.Column="2" Foreground="#D0D9F6" VerticalAlignment="Center"
                                                    HorizontalAlignment="Right" Text="{Binding PercentLabel}" />
-                                        <Button Grid.Column="3" Margin="7,0,0,0" Padding="3" VerticalAlignment="Center"
-                                                Click="MuteButton_Click" Content="{Binding MuteLabel}" />
+                                        <Button Grid.Column="3" Margin="7,0,0,0" VerticalAlignment="Center"
+                                                Style="{StaticResource MuteButtonStyle}"
+                                                Click="MuteButton_Click"
+                                                AutomationProperties.Name="{Binding MuteToolTip}" />
                                     </Grid>
                                 </Border>
                             </DataTemplate>

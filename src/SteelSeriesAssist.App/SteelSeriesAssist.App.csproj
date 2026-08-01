@@ -17,4 +17,8 @@
   <ItemGroup>
     <ProjectReference Include="..\SteelSeriesAssist.Application\SteelSeriesAssist.Application.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <None Remove="Assets\steelseries-assist.ico" />
+    <Resource Include="Assets\steelseries-assist.ico" />
+  </ItemGroup>
 </Project>

@@ -548,13 +548,13 @@ public partial class MainWindow : Window
 
                 _muted = value;
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(MuteLabel));
+                OnPropertyChanged(nameof(MuteToolTip));
             }
         }
 
         public string PercentLabel => $"{Percent}%";
 
-        public string MuteLabel => Muted ? "开" : "静";
+        public string MuteToolTip => Muted ? "取消静音" : "静音";
 
         private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

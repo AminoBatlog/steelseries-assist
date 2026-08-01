@@ -63,7 +63,11 @@ function New-IconPngBytes([int]$Size) {
 }
 
 $sizes = @(16, 20, 24, 32, 48, 64, 256)
-$images = @($sizes | ForEach-Object { New-IconPngBytes $_ })
+$images = [System.Collections.Generic.List[byte[]]]::new()
+foreach ($size in $sizes) {
+    [byte[]]$pngBytes = @(New-IconPngBytes $size)
+    $images.Add($pngBytes)
+}
 $resolvedOutput = [System.IO.Path]::GetFullPath($OutputPath)
 $outputDirectory = [System.IO.Path]::GetDirectoryName($resolvedOutput)
 [System.IO.Directory]::CreateDirectory($outputDirectory) | Out-Null
