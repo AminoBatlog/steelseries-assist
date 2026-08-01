@@ -1,0 +1,494 @@
+<Window x:Class="SteelSeriesAssist.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="SteelSeries Assist"
+        Width="460"
+        Height="560"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        WindowStyle="ToolWindow"
+        Background="#171F24"
+        AllowDrop="True"
+        PreviewDragOver="Window_PreviewDragOver"
+        Deactivated="Window_Deactivated"
+        Closing="Window_Closing">
+    <Window.Resources>
+        <Style x:Key="ScrollPageButtonStyle" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="Transparent" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ScrollThumbStyle" TargetType="Thumb">
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border x:Name="ThumbBody" Margin="1,0" CornerRadius="3" Background="#4E5968" />
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ThumbBody" Property="Background" Value="#69778A" />
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="ThumbBody" Property="Background" Value="#6675FF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="7" />
+            <Setter Property="Margin" Value="3,2,0,2" />
+            <Setter Property="Background" Value="#161A1F" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Border CornerRadius="4" Background="{TemplateBinding Background}">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand"
+                                                  Style="{StaticResource ScrollPageButtonStyle}" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource ScrollThumbStyle}" />
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand"
+                                                  Style="{StaticResource ScrollPageButtonStyle}" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="ComboBoxItem">
+            <Setter Property="Foreground" Value="#C9D2DE" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemBackground" Margin="3,1" Padding="{TemplateBinding Padding}"
+                                CornerRadius="5" Background="Transparent">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBackground" Property="Background" Value="#303A45" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBackground" Property="Background" Value="#364160" />
+                                <Setter Property="Foreground" Value="#DDE2FF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="DeviceComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Foreground" Value="#D0D9E6" />
+            <Setter Property="Background" Value="#181E24" />
+            <Setter Property="BorderBrush" Value="#3A4652" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="9,0,28,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="DropDownToggle" Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="ComboBorder" CornerRadius="6" Background="#181E24"
+                                                BorderBrush="#3A4652" BorderThickness="1">
+                                            <Path x:Name="Arrow" Width="8" Height="5" Margin="0,0,9,0"
+                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                  Fill="#8793A3" Stretch="Fill"
+                                                  Data="M 0 0 L 4 4 L 8 0 Z" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="ComboBorder" Property="BorderBrush" Value="#6675FF" />
+                                                <Setter TargetName="ComboBorder" Property="Background" Value="#202832" />
+                                                <Setter TargetName="Arrow" Property="Fill" Value="#AAB4FF" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="ComboBorder" Property="BorderBrush" Value="#6675FF" />
+                                                <Setter TargetName="Arrow" Property="RenderTransform">
+                                                    <Setter.Value><RotateTransform Angle="180" CenterX="4" CenterY="2.5" /></Setter.Value>
+                                                </Setter>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <TextBlock Margin="{TemplateBinding Padding}" VerticalAlignment="Center"
+                                       HorizontalAlignment="Left" IsHitTestVisible="False"
+                                       MaxWidth="62" TextTrimming="CharacterEllipsis"
+                                       Foreground="{TemplateBinding Foreground}"
+                                       Text="{Binding SelectedItem.Name, RelativeSource={RelativeSource TemplatedParent}}"
+                                       ToolTip="{Binding SelectedItem.Name, RelativeSource={RelativeSource TemplatedParent}}" />
+                            <Popup x:Name="PART_Popup" Placement="Bottom" AllowsTransparency="True"
+                                   PopupAnimation="Fade" Focusable="False" IsOpen="{TemplateBinding IsDropDownOpen}">
+                                <Border Margin="0,4,0,0" MinWidth="230" MaxHeight="260" Padding="4"
+                                        CornerRadius="8" Background="#20272E" BorderBrush="#44505E"
+                                        BorderThickness="1">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                        <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="HasItems" Value="False">
+                                <Setter TargetName="PART_Popup" Property="MinHeight" Value="80" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="VolumeRepeatButtonStyle" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Grid Background="Transparent">
+                            <Border Height="5" VerticalAlignment="Center" CornerRadius="2.5"
+                                    Background="{TemplateBinding Background}" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="VolumeThumbStyle" TargetType="Thumb">
+            <Setter Property="Width" Value="19" />
+            <Setter Property="Height" Value="19" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Grid>
+                            <Ellipse x:Name="ThumbGlow" Width="19" Height="19" Fill="#6675FF" Opacity="0" />
+                            <Ellipse x:Name="ThumbBody" Width="14" Height="14" Fill="#F2F5FA"
+                                     Stroke="#171F24" StrokeThickness="2.2" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ThumbGlow" Property="Opacity" Value="1" />
+                                <Setter TargetName="ThumbGlow" Property="Opacity" Value="0.28" />
+                                <Setter TargetName="ThumbBody" Property="Width" Value="16" />
+                                <Setter TargetName="ThumbBody" Property="Height" Value="16" />
+                            </Trigger>
+                            <Trigger Property="IsDragging" Value="True">
+                                <Setter TargetName="ThumbGlow" Property="Fill" Value="#6675FF" />
+                                <Setter TargetName="ThumbGlow" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="VolumeSliderStyle" TargetType="Slider">
+            <Setter Property="Foreground" Value="#6675FF" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Height="28" VerticalAlignment="Center" Background="Transparent">
+                            <Border Height="5" Margin="8,0" VerticalAlignment="Center"
+                                    CornerRadius="2.5" Background="#46515E" />
+                            <Track x:Name="PART_Track" Height="28" Margin="8,0"
+                                   Orientation="Horizontal" IsDirectionReversed="False">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Background="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Slider}}}"
+                                                  Command="Slider.DecreaseLarge"
+                                                  Style="{StaticResource VolumeRepeatButtonStyle}" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb Style="{StaticResource VolumeThumbStyle}" />
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Background="Transparent" Command="Slider.IncreaseLarge"
+                                                  Style="{StaticResource VolumeRepeatButtonStyle}" />
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MainTabItemStyle" TargetType="TabItem">
+            <Setter Property="Foreground" Value="#7F8A9A" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBackground" Margin="3" Height="36" CornerRadius="7"
+                                Background="{TemplateBinding Background}" Cursor="Hand">
+                            <Grid>
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"
+                                                  ContentSource="Header" />
+                                <Border x:Name="SelectionLine" Height="3" Margin="14,0"
+                                        VerticalAlignment="Bottom" CornerRadius="2,2,0,0"
+                                        Background="#6675FF" Opacity="0" />
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBackground" Property="Background" Value="#252E37" />
+                                <Setter Property="Foreground" Value="#C8D1DE" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBackground" Property="Background" Value="#2B3440" />
+                                <Setter TargetName="SelectionLine" Property="Opacity" Value="1" />
+                                <Setter Property="Foreground" Value="#EEF1FF" />
+                            </Trigger>
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsSelected" Value="True" />
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="TabBackground" Property="Background" Value="#303A47" />
+                            </MultiTrigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MainTabControlStyle" TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource MainTabItemStyle}" />
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Rows="1" />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid KeyboardNavigation.TabNavigation="Local">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Border Margin="0,0,0,6" Padding="2" CornerRadius="9"
+                                    Background="#1D252C" BorderBrush="#303A44" BorderThickness="1">
+                                <ItemsPresenter KeyboardNavigation.TabIndex="1" />
+                            </Border>
+                            <Border Grid.Row="1" Background="Transparent">
+                                <ContentPresenter x:Name="PART_SelectedContentHost"
+                                                  ContentSource="SelectedContent"
+                                                  HorizontalAlignment="Stretch"
+                                                  VerticalAlignment="Stretch"
+                                                  SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid x:Name="LayoutRoot" Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <DockPanel>
+            <TextBlock Foreground="#D0D9F6" FontSize="22" FontWeight="SemiBold"
+                       Text="SteelSeries Assist" />
+            <Ellipse x:Name="StatusDot" DockPanel.Dock="Right" Width="9" Height="9"
+                     Margin="8" Fill="#61697A" />
+        </DockPanel>
+
+        <TextBlock x:Name="StatusText" Grid.Row="1" Margin="0,8,0,16"
+                   Foreground="#868FA2" Text="正在连接 Sonar…" />
+
+        <TabControl Grid.Row="2" Style="{StaticResource MainTabControlStyle}">
+            <TabItem Header="音量与设备">
+                <ScrollViewer Margin="0,10,0,0" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <ItemsControl x:Name="ChannelList" HorizontalContentAlignment="Stretch">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Margin="0,0,0,8" Padding="12" CornerRadius="7" Background="#232B32">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="105" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="45" />
+                                            <ColumnDefinition Width="42" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Foreground="#D0D9F6" FontWeight="SemiBold" Text="{Binding DisplayName}" />
+                                            <ComboBox Margin="0,5,0,0" Width="100" Height="26" FontSize="10"
+                                                      Style="{StaticResource DeviceComboBoxStyle}"
+                                                      Visibility="{Binding DeviceVisibility}"
+                                                      ItemsSource="{Binding DeviceOptions}"
+                                                      SelectedItem="{Binding SelectedDevice, Mode=OneWay}"
+                                                      DisplayMemberPath="Name"
+                                                      DropDownOpened="DeviceComboBox_DropDownOpened"
+                                                      DropDownClosed="DeviceComboBox_DropDownClosed"
+                                                      SelectionChanged="DeviceComboBox_SelectionChanged" />
+                                            <TextBlock Margin="0,3,0,0" Foreground="#737C8D" FontSize="10"
+                                                       Visibility="{Binding MasterVisibility}" Text="全部通道" />
+                                        </StackPanel>
+                                        <Slider Grid.Column="1" Margin="10,0" VerticalAlignment="Center"
+                                                Style="{StaticResource VolumeSliderStyle}"
+                                                Foreground="{Binding AccentBrush}"
+                                                Minimum="0" Maximum="100" Value="{Binding Percent}"
+                                                PreviewMouseLeftButtonUp="VolumeSlider_MouseUp" />
+                                        <TextBlock Grid.Column="2" Foreground="#D0D9F6" VerticalAlignment="Center"
+                                                   HorizontalAlignment="Right" Text="{Binding PercentLabel}" />
+                                        <Button Grid.Column="3" Margin="7,0,0,0" Padding="3" VerticalAlignment="Center"
+                                                Click="MuteButton_Click" Content="{Binding MuteLabel}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="应用路由">
+                <ScrollViewer Margin="0,10,0,0" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel>
+                        <TextBlock Margin="4,0,4,10" Foreground="#868FA2" FontSize="11" TextWrapping="Wrap"
+                                   Text="按住应用并拖到目标 Sonar 通道。多音轨应用会同时出现在多个通道中。" />
+                        <ItemsControl x:Name="RoutingLaneList" HorizontalContentAlignment="Stretch">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <UniformGrid Columns="2" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Margin="4" Padding="10" MinHeight="165" CornerRadius="8"
+                                            Background="#232B32" BorderBrush="#334189" BorderThickness="1"
+                                            AllowDrop="True"
+                                            DragEnter="RoutingLane_DragEnter"
+                                            DragOver="RoutingLane_DragOver"
+                                            DragLeave="RoutingLane_DragLeave"
+                                            Drop="RoutingLane_Drop">
+                                        <Grid>
+                                            <StackPanel>
+                                                <DockPanel Margin="0,0,0,8">
+                                                    <Border DockPanel.Dock="Left" Width="7" Height="22" Margin="0,0,7,0"
+                                                            CornerRadius="3" Background="{Binding AccentBrush}" />
+                                                    <TextBlock Foreground="#D0D9F6" FontSize="14" FontWeight="SemiBold"
+                                                               VerticalAlignment="Center" Text="{Binding Name}" />
+                                                    <TextBlock DockPanel.Dock="Right" Foreground="#737C8D" FontSize="10"
+                                                               VerticalAlignment="Center" Text="{Binding AppCountLabel}" />
+                                                </DockPanel>
+                                                <ScrollViewer MaxHeight="125" VerticalScrollBarVisibility="Auto">
+                                                    <ItemsControl ItemsSource="{Binding Applications}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Margin="0,0,0,6" Padding="8,6" CornerRadius="6"
+                                                                        Background="#161A1F" Cursor="Hand"
+                                                                        PreviewMouseLeftButtonDown="RoutedApplication_MouseLeftButtonDown"
+                                                                        PreviewMouseMove="RoutedApplication_MouseMove">
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="*" />
+                                                                            <ColumnDefinition Width="Auto" />
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <TextBlock Foreground="#D0D9F6" FontSize="11"
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   Text="{Binding DisplayName}" />
+                                                                        <TextBlock Grid.Column="1" Margin="5,0,0,0"
+                                                                                   Foreground="#737C8D" FontSize="9"
+                                                                                   Text="{Binding SessionCountLabel}" />
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </ScrollViewer>
+                                                <TextBlock Margin="2,5,2,0" Foreground="#61697A" FontSize="9"
+                                                           HorizontalAlignment="Center"
+                                                           Visibility="{Binding EmptyVisibility}"
+                                                           Text="拖放应用到这里" />
+                                            </StackPanel>
+                                            <Border VerticalAlignment="Bottom" Margin="0,8,0,0" Padding="7,5"
+                                                    CornerRadius="5" Background="{Binding AccentBrush}"
+                                                    Visibility="{Binding DropHintVisibility}"
+                                                    Opacity="0.94" IsHitTestVisible="False">
+                                                <TextBlock HorizontalAlignment="Center" Foreground="White"
+                                                           FontSize="10" FontWeight="SemiBold"
+                                                           Text="{Binding DropHint}" />
+                                            </Border>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <TextBlock x:Name="ActionStatusText" Grid.Row="3" Margin="0,14,0,0" Foreground="#61697A" FontSize="11"
+                   Text="拖动滑块调节音量，点击按钮切换静音" />
+
+        <Canvas x:Name="DragOverlay" Grid.RowSpan="4" Panel.ZIndex="1000" IsHitTestVisible="False">
+            <Border x:Name="DragGhost" Visibility="Collapsed" Padding="11,7" CornerRadius="7"
+                    Background="#EE161A1F" BorderBrush="#6675FF" BorderThickness="1.5"
+                    Opacity="0">
+                <Border.RenderTransform>
+                    <ScaleTransform x:Name="DragGhostScale" ScaleX="0.92" ScaleY="0.92" />
+                </Border.RenderTransform>
+                <Border.RenderTransformOrigin>0.5,0.5</Border.RenderTransformOrigin>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Margin="0,0,7,0" Foreground="#7E8CFF" FontSize="13" Text="↗" />
+                    <StackPanel>
+                        <TextBlock x:Name="DragGhostName" MaxWidth="180" Foreground="White" FontSize="11"
+                                   FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="DragGhostRoute" Margin="0,2,0,0" Foreground="#8F99AB" FontSize="9" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Canvas>
+    </Grid>
+</Window>

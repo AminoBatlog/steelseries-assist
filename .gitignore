@@ -1,0 +1,44 @@
+# Build and publish output
+bin/
+obj/
+artifacts/
+publish/
+*.nupkg
+*.snupkg
+
+# Test output and coverage
+TestResults/
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+
+# IDE and editor state
+.vs/
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+
+# Local .NET / Codex state
+.dotnet-cli/
+.nuget-packages/
+.agents/
+.codex/
+
+# Logs and temporary files
+logs/
+*.log
+*.tmp
+*.bak
+
+# OS-generated files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Machine-specific launcher (contains local proxy settings)
+start_codex.bat

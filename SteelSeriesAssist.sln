@@ -1,0 +1,48 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SteelSeriesAssist.Domain", "src\SteelSeriesAssist.Domain\SteelSeriesAssist.Domain.csproj", "{2A9CC7C2-82E4-4CB3-BD71-5058BF73F281}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SteelSeriesAssist.Sonar", "src\SteelSeriesAssist.Sonar\SteelSeriesAssist.Sonar.csproj", "{7FD7A639-E639-4F92-BA83-197116125EBA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SteelSeriesAssist.Application", "src\SteelSeriesAssist.Application\SteelSeriesAssist.Application.csproj", "{1233051A-890D-4D7A-B4CB-E16342209BB6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SteelSeriesAssist.App", "src\SteelSeriesAssist.App\SteelSeriesAssist.App.csproj", "{F81B367E-4E88-416D-A19E-39758D0B5494}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SteelSeriesAssist.Probe", "src\SteelSeriesAssist.Probe\SteelSeriesAssist.Probe.csproj", "{09A6EF21-2C3C-4B84-8495-6157E7DD2FA3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SteelSeriesAssist.Tests", "tests\SteelSeriesAssist.Tests\SteelSeriesAssist.Tests.csproj", "{7D727454-9FD9-462D-8C8D-5BD64C3D7EAE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2A9CC7C2-82E4-4CB3-BD71-5058BF73F281}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2A9CC7C2-82E4-4CB3-BD71-5058BF73F281}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2A9CC7C2-82E4-4CB3-BD71-5058BF73F281}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2A9CC7C2-82E4-4CB3-BD71-5058BF73F281}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7FD7A639-E639-4F92-BA83-197116125EBA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7FD7A639-E639-4F92-BA83-197116125EBA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7FD7A639-E639-4F92-BA83-197116125EBA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7FD7A639-E639-4F92-BA83-197116125EBA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1233051A-890D-4D7A-B4CB-E16342209BB6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1233051A-890D-4D7A-B4CB-E16342209BB6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1233051A-890D-4D7A-B4CB-E16342209BB6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1233051A-890D-4D7A-B4CB-E16342209BB6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F81B367E-4E88-416D-A19E-39758D0B5494}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F81B367E-4E88-416D-A19E-39758D0B5494}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F81B367E-4E88-416D-A19E-39758D0B5494}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F81B367E-4E88-416D-A19E-39758D0B5494}.Release|Any CPU.Build.0 = Release|Any CPU
+		{09A6EF21-2C3C-4B84-8495-6157E7DD2FA3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{09A6EF21-2C3C-4B84-8495-6157E7DD2FA3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{09A6EF21-2C3C-4B84-8495-6157E7DD2FA3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{09A6EF21-2C3C-4B84-8495-6157E7DD2FA3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7D727454-9FD9-462D-8C8D-5BD64C3D7EAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7D727454-9FD9-462D-8C8D-5BD64C3D7EAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7D727454-9FD9-462D-8C8D-5BD64C3D7EAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7D727454-9FD9-462D-8C8D-5BD64C3D7EAE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

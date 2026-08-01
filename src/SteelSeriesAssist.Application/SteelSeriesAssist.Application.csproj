@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\SteelSeriesAssist.Domain\SteelSeriesAssist.Domain.csproj" />
+    <ProjectReference Include="..\SteelSeriesAssist.Sonar\SteelSeriesAssist.Sonar.csproj" />
+  </ItemGroup>
+</Project>
