@@ -4,6 +4,8 @@ public sealed record VolumeState(float Volume, bool Muted);
 
 public sealed record ChannelVolume(string Channel, VolumeState State);
 
+public sealed record ChannelVolumeUpdate(string Channel, float? Volume, bool? Muted);
+
 public sealed record AudioDevice(
     string FriendlyName,
     string Id,

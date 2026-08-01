@@ -33,10 +33,19 @@ public partial class MainWindow : Window
     ]));
     private SonarClient? _sonarClient;
     private readonly DispatcherTimer _syncTimer;
+    private readonly DispatcherTimer _volumeFallbackTimer;
+    private readonly SonarEventClient _sonarEventClient = new();
+    private readonly WindowsAudioEndpointVolume _endpointVolume = new();
+    private readonly VolumeWriteCoordinator _volumeWriter;
+    private readonly Dictionary<string, ChannelRow> _channelRows = [];
+    private readonly HashSet<string> _volumeDragChannels = [];
+    private Uri? _eventBaseAddress;
     private bool _isLoading;
+    private bool _isFallbackLoading;
     private bool _isWriting;
     private bool _isDragging;
     private bool _isDeviceDropDownOpen;
+    private bool _isApplyingRemoteVolume;
     private WpfPoint _dragStartPoint;
     private FrameworkElement? _draggedElement;
     private RoutingLane? _dropTargetLane;
@@ -47,7 +56,13 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _syncTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _volumeWriter = new VolumeWriteCoordinator(WriteVolumeAsync);
+        _volumeWriter.WriteCompleted += VolumeWriteCompleted;
+        _volumeWriter.WriteFailed += VolumeWriteFailed;
+        _sonarEventClient.VolumeChanged += SonarVolumeChanged;
+        _sonarEventClient.ConnectionStateChanged += SonarEventConnectionChanged;
+
+        _syncTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _syncTimer.Tick += (_, _) =>
         {
             if (IsVisible && !_isLoading && !_isWriting && !_isDragging && !_isDeviceDropDownOpen &&
@@ -57,6 +72,17 @@ public partial class MainWindow : Window
             }
         };
         _syncTimer.Start();
+
+        _volumeFallbackTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+        _volumeFallbackTimer.Tick += (_, _) =>
+        {
+            if (IsVisible && !_sonarEventClient.IsConnected && !_isLoading && !_isFallbackLoading &&
+                !_isWriting && !_isDeviceDropDownOpen && Mouse.LeftButton == MouseButtonState.Released)
+            {
+                RefreshVolumesFallbackAsync();
+            }
+        };
+        _volumeFallbackTimer.Start();
     }
 
     public async void LoadSonarStateAsync(bool showConnecting = true)
@@ -88,6 +114,7 @@ public partial class MainWindow : Window
                     _sonarClient = null;
                     var recovered = await _stateService.LoadAsync();
                     _sonarClient = new SonarClient(recovered.Endpoint.BaseAddress);
+                    StartEventClient(recovered.Endpoint.BaseAddress);
                     snapshot = recovered.Snapshot;
                 }
             }
@@ -95,15 +122,17 @@ public partial class MainWindow : Window
             {
                 var initial = await _stateService.LoadAsync();
                 _sonarClient = new SonarClient(initial.Endpoint.BaseAddress);
+                StartEventClient(initial.Endpoint.BaseAddress);
                 snapshot = initial.Snapshot;
             }
+            _endpointVolume.UpdateDevices(snapshot.Devices);
             var bindings = snapshot.Bindings.ToDictionary(
                 binding => NormalizeBindingChannel(binding.Channel),
                 binding => binding);
             var physicalDevices = snapshot.Devices
                 .Where(device => device.State == "active" && !device.IsVirtual)
                 .ToArray();
-            ChannelList.ItemsSource = snapshot.Volumes
+            var nextRows = snapshot.Volumes
                 .OrderBy(volume => VolumeSortOrder(volume.Channel))
                 .Select(volume =>
             {
@@ -125,6 +154,7 @@ public partial class MainWindow : Window
                     binding?.DeviceId,
                     CreateRoleBrush(volume.Channel));
             }).ToArray();
+            ApplyChannelRows(nextRows);
 
             var routeDevices = snapshot.Devices
                 .Where(device => device.State == "active" && device.IsVirtual && device.DataFlow == "render" &&
@@ -161,8 +191,6 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
-            ChannelList.ItemsSource = Array.Empty<ChannelRow>();
-            RoutingLaneList.ItemsSource = Array.Empty<RoutingLane>();
             StatusText.Text = $"Sonar 不可用：{exception.Message}";
             StatusDot.Fill = new SolidColorBrush(MediaColor.FromRgb(255, 83, 89));
         }
@@ -237,23 +265,238 @@ public partial class MainWindow : Window
         else
         {
             _syncTimer.Stop();
+            _volumeFallbackTimer.Stop();
+            _sonarEventClient.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            _volumeWriter.DisposeAsync().AsTask().GetAwaiter().GetResult();
             _sonarClient?.Dispose();
         }
     }
 
-    private async void VolumeSlider_MouseUp(object sender, MouseButtonEventArgs e)
+    private void VolumeSlider_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not Slider { DataContext: ChannelRow row } || _sonarClient is null)
+        if (sender is Slider { DataContext: ChannelRow row })
+        {
+            _volumeDragChannels.Add(row.Channel);
+        }
+    }
+
+    private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_isApplyingRemoteVolume || _isLoading ||
+            sender is not Slider { DataContext: ChannelRow row } slider ||
+            (!_volumeDragChannels.Contains(row.Channel) && !slider.IsKeyboardFocusWithin))
         {
             return;
         }
 
-        await ExecuteWriteAsync(async () =>
+        _volumeWriter.Queue(row.Channel, (float)Math.Clamp(e.NewValue / 100d, 0d, 1d), isFinal: false);
+        ActionStatusText.Text = $"正在调整{row.DisplayName}音量…";
+    }
+
+    private void VolumeSlider_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is Slider { DataContext: ChannelRow row } slider)
         {
-            var confirmed = await _sonarClient.SetChannelVolumeAsync(row.Channel, row.Percent / 100f);
-            row.Percent = (int)Math.Round(confirmed.Volume * 100);
-            row.Muted = confirmed.Muted;
-        }, $"已更新{row.DisplayName}音量");
+            Dispatcher.BeginInvoke(() => CompleteVolumeInteraction(slider, row), DispatcherPriority.Input);
+        }
+    }
+
+    private void VolumeSlider_LostMouseCapture(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is Slider { DataContext: ChannelRow row } slider)
+        {
+            CompleteVolumeInteraction(slider, row);
+        }
+    }
+
+    private void VolumeSlider_KeyUp(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (sender is Slider { DataContext: ChannelRow row } slider &&
+            e.Key is Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown)
+        {
+            _volumeWriter.Queue(row.Channel, (float)Math.Clamp(slider.Value / 100d, 0d, 1d), isFinal: true);
+        }
+    }
+
+    private void CompleteVolumeInteraction(Slider slider, ChannelRow row)
+    {
+        if (!_volumeDragChannels.Remove(row.Channel))
+        {
+            return;
+        }
+
+        _volumeWriter.Queue(row.Channel, (float)Math.Clamp(slider.Value / 100d, 0d, 1d), isFinal: true);
+    }
+
+    private Task<VolumeState> WriteVolumeAsync(string channel, float volume, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_endpointVolume.TrySetVolume(channel, volume, out var endpointState))
+        {
+            return Task.FromResult(endpointState);
+        }
+
+        var client = _sonarClient ?? throw new InvalidOperationException("Sonar is not connected.");
+        return client.SetChannelVolumeAsync(channel, volume, cancellationToken);
+    }
+
+    private async Task<VolumeState> WriteMutedAsync(string channel, bool muted)
+    {
+        if (_endpointVolume.TrySetMuted(channel, muted, out var endpointState))
+        {
+            return endpointState;
+        }
+
+        var client = _sonarClient ?? throw new InvalidOperationException("Sonar is not connected.");
+        return await client.SetChannelMutedAsync(channel, muted);
+    }
+
+    private void VolumeWriteCompleted(string channel, VolumeState confirmed, bool isFinal)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (!_volumeDragChannels.Contains(channel))
+            {
+                ApplyVolumeUpdates([new ChannelVolumeUpdate(channel, confirmed.Volume, confirmed.Muted)]);
+            }
+
+            if (isFinal && _channelRows.TryGetValue(channel, out var row))
+            {
+                ActionStatusText.Text = $"已更新{row.DisplayName}音量";
+            }
+        });
+    }
+
+    private void VolumeWriteFailed(string channel, Exception exception)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            ActionStatusText.Text = $"音量同步失败：{exception.Message}";
+            RefreshVolumesFallbackAsync();
+        });
+    }
+
+    private void SonarVolumeChanged(IReadOnlyList<ChannelVolumeUpdate> updates)
+    {
+        Dispatcher.BeginInvoke(() => ApplyVolumeUpdates(updates), DispatcherPriority.DataBind);
+    }
+
+    private void SonarEventConnectionChanged(bool connected)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            ActionStatusText.Text = connected
+                ? "Sonar 实时同步已连接"
+                : "实时同步已断开，正在使用轮询并尝试重连…";
+            if (connected)
+            {
+                RefreshVolumesFallbackAsync();
+            }
+        });
+    }
+
+    private void StartEventClient(Uri baseAddress)
+    {
+        if (_eventBaseAddress == baseAddress)
+        {
+            return;
+        }
+
+        _eventBaseAddress = baseAddress;
+        _sonarEventClient.Start(baseAddress);
+    }
+
+    private async void RefreshVolumesFallbackAsync()
+    {
+        if (_isFallbackLoading || _sonarClient is null)
+        {
+            return;
+        }
+
+        _isFallbackLoading = true;
+        try
+        {
+            var volumes = await _sonarClient.GetClassicVolumesAsync();
+            ApplyVolumeUpdates(volumes.Select(volume =>
+                new ChannelVolumeUpdate(volume.Channel, volume.State.Volume, volume.State.Muted)).ToArray());
+        }
+        catch
+        {
+            if (!_isLoading)
+            {
+                LoadSonarStateAsync(showConnecting: false);
+            }
+        }
+        finally
+        {
+            _isFallbackLoading = false;
+        }
+    }
+
+    private void ApplyChannelRows(IReadOnlyList<ChannelRow> nextRows)
+    {
+        var topologyChanged = _channelRows.Count != nextRows.Count ||
+                              nextRows.Any(row => !_channelRows.ContainsKey(row.Channel));
+        if (topologyChanged)
+        {
+            _channelRows.Clear();
+            foreach (var row in nextRows)
+            {
+                _channelRows.Add(row.Channel, row);
+            }
+
+            ChannelList.ItemsSource = nextRows;
+            return;
+        }
+
+        _isApplyingRemoteVolume = true;
+        try
+        {
+            foreach (var next in nextRows)
+            {
+                var current = _channelRows[next.Channel];
+                if (!_volumeDragChannels.Contains(next.Channel))
+                {
+                    current.Percent = next.Percent;
+                }
+
+                current.Muted = next.Muted;
+                current.UpdateDeviceOptions(next.DeviceOptions, next.BoundDeviceId);
+            }
+        }
+        finally
+        {
+            _isApplyingRemoteVolume = false;
+        }
+    }
+
+    private void ApplyVolumeUpdates(IReadOnlyList<ChannelVolumeUpdate> updates)
+    {
+        _isApplyingRemoteVolume = true;
+        try
+        {
+            foreach (var update in updates)
+            {
+                if (!_channelRows.TryGetValue(update.Channel, out var row))
+                {
+                    continue;
+                }
+
+                if (update.Volume.HasValue && !_volumeDragChannels.Contains(update.Channel))
+                {
+                    row.Percent = (int)Math.Round(Math.Clamp(update.Volume.Value, 0f, 1f) * 100);
+                }
+
+                if (update.Muted.HasValue)
+                {
+                    row.Muted = update.Muted.Value;
+                }
+            }
+        }
+        finally
+        {
+            _isApplyingRemoteVolume = false;
+        }
     }
 
     private async void MuteButton_Click(object sender, RoutedEventArgs e)
@@ -265,7 +508,7 @@ public partial class MainWindow : Window
 
         await ExecuteWriteAsync(async () =>
         {
-            var confirmed = await _sonarClient.SetChannelMutedAsync(row.Channel, !row.Muted);
+            var confirmed = await WriteMutedAsync(row.Channel, !row.Muted);
             row.Percent = (int)Math.Round(confirmed.Volume * 100);
             row.Muted = confirmed.Muted;
         }, row.Muted ? $"已取消{row.DisplayName}静音" : $"已静音{row.DisplayName}");
@@ -282,7 +525,7 @@ public partial class MainWindow : Window
         await ExecuteWriteAsync(async () =>
         {
             var confirmed = await _sonarClient.SetChannelBindingAsync(row.BindingChannel, selected.Id);
-            row.BoundDeviceId = confirmed.DeviceId;
+            row.UpdateDeviceOptions(row.DeviceOptions, confirmed.DeviceId);
         }, $"{row.DisplayName}已切换到 {selected.Name}");
     }
 
@@ -508,11 +751,11 @@ public partial class MainWindow : Window
 
         public string DisplayName { get; }
 
-        public IReadOnlyList<DeviceOption> DeviceOptions { get; }
+        public IReadOnlyList<DeviceOption> DeviceOptions { get; private set; }
 
-        public DeviceOption? SelectedDevice { get; }
+        public DeviceOption? SelectedDevice { get; private set; }
 
-        public string? BoundDeviceId { get; set; }
+        public string? BoundDeviceId { get; private set; }
 
         public MediaBrush AccentBrush { get; }
 
@@ -555,6 +798,23 @@ public partial class MainWindow : Window
         public string PercentLabel => $"{Percent}%";
 
         public string MuteToolTip => Muted ? "取消静音" : "静音";
+
+        public void UpdateDeviceOptions(IReadOnlyList<DeviceOption> deviceOptions, string? boundDeviceId)
+        {
+            var optionsChanged = DeviceOptions.Count != deviceOptions.Count ||
+                                 !DeviceOptions.SequenceEqual(deviceOptions);
+            var bindingChanged = BoundDeviceId != boundDeviceId;
+            if (!optionsChanged && !bindingChanged)
+            {
+                return;
+            }
+
+            DeviceOptions = deviceOptions;
+            BoundDeviceId = boundDeviceId;
+            SelectedDevice = deviceOptions.FirstOrDefault(device => device.Id == boundDeviceId);
+            OnPropertyChanged(nameof(DeviceOptions));
+            OnPropertyChanged(nameof(SelectedDevice));
+        }
 
         private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

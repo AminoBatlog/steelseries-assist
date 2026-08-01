@@ -442,7 +442,11 @@
                                                 Style="{StaticResource VolumeSliderStyle}"
                                                 Foreground="{Binding AccentBrush}"
                                                 Minimum="0" Maximum="100" Value="{Binding Percent}"
-                                                PreviewMouseLeftButtonUp="VolumeSlider_MouseUp" />
+                                                PreviewMouseLeftButtonDown="VolumeSlider_MouseDown"
+                                                ValueChanged="VolumeSlider_ValueChanged"
+                                                PreviewMouseLeftButtonUp="VolumeSlider_MouseUp"
+                                                LostMouseCapture="VolumeSlider_LostMouseCapture"
+                                                PreviewKeyUp="VolumeSlider_KeyUp" />
                                         <TextBlock Grid.Column="2" Foreground="#D0D9F6" VerticalAlignment="Center"
                                                    HorizontalAlignment="Right" Text="{Binding PercentLabel}" />
                                         <Button Grid.Column="3" Margin="7,0,0,0" VerticalAlignment="Center"

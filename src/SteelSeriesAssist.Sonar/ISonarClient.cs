@@ -6,6 +6,9 @@ public interface ISonarClient
 {
     Task<SonarSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<ChannelVolume>> GetClassicVolumesAsync(
+        CancellationToken cancellationToken = default);
+
     Task<VolumeState> SetChannelVolumeAsync(
         string channel,
         float volume,

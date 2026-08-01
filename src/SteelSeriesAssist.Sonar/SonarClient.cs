@@ -45,6 +45,14 @@ public sealed class SonarClient : ISonarClient, IDisposable
             DateTimeOffset.UtcNow);
     }
 
+    public async Task<IReadOnlyList<ChannelVolume>> GetClassicVolumesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var document = await GetAsync<VolumeSettingsDocument>("/volumeSettings/classic", cancellationToken)
+            .ConfigureAwait(false);
+        return MapVolumes(document);
+    }
+
     public async Task<VolumeState> SetChannelVolumeAsync(
         string channel,
         float volume,
