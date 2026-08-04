@@ -2,7 +2,7 @@
 
 SteelSeries Assist 是 SteelSeries GG / Sonar 的轻量级 Windows 托盘控制面板。
 
-当前版本：`0.0.3`
+当前版本：`0.0.4`
 
 当前已经完成第一轮可运行 MVP：程序单实例常驻托盘，点击图标可快速调整 Sonar 各通道音量、静音、物理输入/输出设备绑定，并可将当前活跃的播放应用路由到 Game、Chat、Media 或 Aux。
 
