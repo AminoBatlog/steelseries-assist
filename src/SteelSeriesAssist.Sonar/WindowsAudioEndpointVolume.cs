@@ -42,6 +42,7 @@ public sealed class WindowsAudioEndpointVolume
         state = UseEndpoint(endpointId, endpoint =>
         {
             Marshal.ThrowExceptionForHR(endpoint.SetMasterVolumeLevelScalar(volume, Guid.Empty));
+            Marshal.ThrowExceptionForHR(endpoint.SetMute(volume <= 0f, Guid.Empty));
             Marshal.ThrowExceptionForHR(endpoint.GetMasterVolumeLevelScalar(out var confirmed));
             Marshal.ThrowExceptionForHR(endpoint.GetMute(out var muted));
             return new VolumeState(confirmed, muted);

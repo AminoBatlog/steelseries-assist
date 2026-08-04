@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Media;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -274,10 +275,46 @@ public partial class MainWindow : Window
 
     private void VolumeSlider_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is Slider { DataContext: ChannelRow row })
+        if (sender is not Slider { DataContext: ChannelRow row } slider)
         {
-            _volumeDragChannels.Add(row.Channel);
+            return;
         }
+
+        _volumeDragChannels.Add(row.Channel);
+        if (e.OriginalSource is not DependencyObject source || IsThumbSource(source))
+        {
+            return;
+        }
+
+        if (slider.Template.FindName("PART_Track", slider) is not Track track || track.ActualWidth <= 0)
+        {
+            return;
+        }
+
+        slider.Value = VolumeSliderMath.ValueFromTrackPosition(
+            e.GetPosition(track).X,
+            track.ActualWidth,
+            track.Thumb?.ActualWidth ?? 0,
+            slider.Minimum,
+            slider.Maximum);
+
+        _volumeDragChannels.Remove(row.Channel);
+        _volumeWriter.Queue(row.Channel, (float)Math.Clamp(slider.Value / 100d, 0d, 1d), isFinal: true);
+        ActionStatusText.Text = $"已调整{row.DisplayName}音量";
+        e.Handled = true;
+    }
+
+    private static bool IsThumbSource(DependencyObject source)
+    {
+        for (var current = source; current is not null; current = VisualTreeHelper.GetParent(current))
+        {
+            if (current is Thumb)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void VolumeSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -328,27 +365,20 @@ public partial class MainWindow : Window
         _volumeWriter.Queue(row.Channel, (float)Math.Clamp(slider.Value / 100d, 0d, 1d), isFinal: true);
     }
 
-    private Task<VolumeState> WriteVolumeAsync(string channel, float volume, CancellationToken cancellationToken)
+    private async Task<VolumeState> WriteVolumeAsync(
+        string channel,
+        float volume,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (_endpointVolume.TrySetVolume(channel, volume, out var endpointState))
-        {
-            return Task.FromResult(endpointState);
-        }
-
-        var client = _sonarClient ?? throw new InvalidOperationException("Sonar is not connected.");
-        return client.SetChannelVolumeAsync(channel, volume, cancellationToken);
-    }
-
-    private async Task<VolumeState> WriteMutedAsync(string channel, bool muted)
-    {
-        if (_endpointVolume.TrySetMuted(channel, muted, out var endpointState))
         {
             return endpointState;
         }
 
         var client = _sonarClient ?? throw new InvalidOperationException("Sonar is not connected.");
-        return await client.SetChannelMutedAsync(channel, muted);
+        await client.SetChannelVolumeAsync(channel, volume, cancellationToken);
+        return await client.SetChannelMutedAsync(channel, volume <= 0f, cancellationToken);
     }
 
     private void VolumeWriteCompleted(string channel, VolumeState confirmed, bool isFinal)
@@ -455,12 +485,10 @@ public partial class MainWindow : Window
             foreach (var next in nextRows)
             {
                 var current = _channelRows[next.Channel];
-                if (!_volumeDragChannels.Contains(next.Channel))
-                {
-                    current.Percent = next.Percent;
-                }
-
-                current.Muted = next.Muted;
+                current.ApplyExternalState(
+                    next.SnapshotPercent,
+                    next.Muted,
+                    updateDisplayedVolume: !_volumeDragChannels.Contains(next.Channel));
                 current.UpdateDeviceOptions(next.DeviceOptions, next.BoundDeviceId);
             }
         }
@@ -482,14 +510,33 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                if (update.Volume.HasValue && !_volumeDragChannels.Contains(update.Channel))
+                var canUpdateDisplayedVolume = !_volumeDragChannels.Contains(update.Channel);
+                int? percent = update.Volume.HasValue
+                    ? (int)Math.Round(Math.Clamp(update.Volume.Value, 0f, 1f) * 100)
+                    : null;
+
+                if (percent is > 0)
                 {
-                    row.Percent = (int)Math.Round(Math.Clamp(update.Volume.Value, 0f, 1f) * 100);
+                    row.RememberNonZero(percent.Value);
                 }
 
                 if (update.Muted.HasValue)
                 {
                     row.Muted = update.Muted.Value;
+                    if (canUpdateDisplayedVolume)
+                    {
+                        row.Percent = update.Muted.Value
+                            ? 0
+                            : percent is > 0 ? percent.Value : row.LastNonZeroPercent;
+                    }
+                }
+                else if (percent.HasValue)
+                {
+                    row.Muted = percent.Value == 0;
+                    if (canUpdateDisplayedVolume)
+                    {
+                        row.Percent = percent.Value;
+                    }
                 }
             }
         }
@@ -506,12 +553,17 @@ public partial class MainWindow : Window
             return;
         }
 
+        var targetMuted = !row.Muted;
+        var targetPercent = targetMuted ? 0 : row.LastNonZeroPercent;
         await ExecuteWriteAsync(async () =>
         {
-            var confirmed = await WriteMutedAsync(row.Channel, !row.Muted);
-            row.Percent = (int)Math.Round(confirmed.Volume * 100);
+            var confirmed = await WriteVolumeAsync(
+                row.Channel,
+                targetPercent / 100f,
+                CancellationToken.None);
+            row.Percent = confirmed.Muted ? 0 : (int)Math.Round(confirmed.Volume * 100);
             row.Muted = confirmed.Muted;
-        }, row.Muted ? $"已取消{row.DisplayName}静音" : $"已静音{row.DisplayName}");
+        }, targetMuted ? $"已静音{row.DisplayName}" : $"已恢复{row.DisplayName}音量");
     }
 
     private async void DeviceComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -721,6 +773,7 @@ public partial class MainWindow : Window
     {
         private int _percent;
         private bool _muted;
+        private int _lastNonZeroPercent;
 
         public ChannelRow(
             string channel,
@@ -735,8 +788,10 @@ public partial class MainWindow : Window
             Channel = channel;
             BindingChannel = bindingChannel;
             DisplayName = displayName;
-            _percent = percent;
-            _muted = muted;
+            _lastNonZeroPercent = percent > 0 ? percent : 50;
+            _muted = muted || percent == 0;
+            _percent = _muted ? 0 : percent;
+            SnapshotPercent = percent;
             DeviceOptions = deviceOptions;
             BoundDeviceId = boundDeviceId;
             SelectedDevice = deviceOptions.FirstOrDefault(device => device.Id == boundDeviceId);
@@ -773,11 +828,20 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                _percent = value;
+                _percent = Math.Clamp(value, 0, 100);
+                if (_percent > 0)
+                {
+                    _lastNonZeroPercent = _percent;
+                }
+
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(PercentLabel));
             }
         }
+
+        public int LastNonZeroPercent => _lastNonZeroPercent;
+
+        public int SnapshotPercent { get; }
 
         public bool Muted
         {
@@ -798,6 +862,24 @@ public partial class MainWindow : Window
         public string PercentLabel => $"{Percent}%";
 
         public string MuteToolTip => Muted ? "取消静音" : "静音";
+
+        public void RememberNonZero(int percent)
+        {
+            if (percent > 0)
+            {
+                _lastNonZeroPercent = Math.Clamp(percent, 1, 100);
+            }
+        }
+
+        public void ApplyExternalState(int volumePercent, bool muted, bool updateDisplayedVolume)
+        {
+            RememberNonZero(volumePercent);
+            Muted = muted || volumePercent == 0;
+            if (updateDisplayedVolume)
+            {
+                Percent = Muted ? 0 : volumePercent;
+            }
+        }
 
         public void UpdateDeviceOptions(IReadOnlyList<DeviceOption> deviceOptions, string? boundDeviceId)
         {

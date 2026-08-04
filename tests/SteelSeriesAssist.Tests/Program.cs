@@ -14,6 +14,7 @@ var tests = new List<(string Name, Func<Task> Run)>
     ("Sonar event client parses partial volume events", EventClientParsesPartialVolumeEvent),
     ("Sonar event client ignores unrelated events", EventClientIgnoresUnrelatedEvent),
     ("Virtual endpoint mapping selects the correct data flow", VirtualEndpointMappingSelectsDataFlow),
+    ("Slider track clicks map to absolute volume", SliderTrackClicksMapToVolume),
     ("Volume writes collapse intermediate values", VolumeWritesCollapseIntermediateValues)
 };
 
@@ -125,6 +126,19 @@ static Task VirtualEndpointMappingSelectsDataFlow()
         "The game channel did not select its active render endpoint.");
     Assert(WindowsAudioEndpointVolume.FindEndpointId("master", devices) is null,
         "Master unexpectedly selected a Windows endpoint.");
+    return Task.CompletedTask;
+}
+
+static Task SliderTrackClicksMapToVolume()
+{
+    const double trackWidth = 120;
+    const double thumbWidth = 20;
+    Assert(VolumeSliderMath.ValueFromTrackPosition(0, trackWidth, thumbWidth, 0, 100) == 0,
+        "A click at the left edge did not map to minimum volume.");
+    Assert(Math.Abs(VolumeSliderMath.ValueFromTrackPosition(60, trackWidth, thumbWidth, 0, 100) - 50) < 0.001,
+        "A click at the track center did not map to 50 percent.");
+    Assert(VolumeSliderMath.ValueFromTrackPosition(120, trackWidth, thumbWidth, 0, 100) == 100,
+        "A click at the right edge did not map to maximum volume.");
     return Task.CompletedTask;
 }
 
