@@ -10,6 +10,9 @@
         WindowStyle="ToolWindow"
         Background="#171F24"
         AllowDrop="True"
+        PreviewMouseMove="Window_PreviewMouseMove"
+        PreviewMouseLeftButtonUp="Window_PreviewMouseLeftButtonUp"
+        LostMouseCapture="Window_LostMouseCapture"
         PreviewDragOver="Window_PreviewDragOver"
         Deactivated="Window_Deactivated"
         Closing="Window_Closing">

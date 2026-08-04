@@ -29,6 +29,7 @@ public partial class App : System.Windows.Application
         }
 
         _mainWindow = new MainWindow();
+        _mainWindow.HideOnDeactivate = !isSmokeTest;
         MainWindow = _mainWindow;
 
         var menu = new Forms.ContextMenuStrip();

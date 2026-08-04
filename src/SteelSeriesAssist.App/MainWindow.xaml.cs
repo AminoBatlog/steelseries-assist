@@ -51,8 +51,15 @@ public partial class MainWindow : Window
     private FrameworkElement? _draggedElement;
     private RoutingLane? _dropTargetLane;
     private Border? _dropTargetBorder;
+    private Slider? _trackDragSlider;
+    private Track? _trackDragTrack;
+    private ChannelRow? _trackDragRow;
+    private bool _isFinishingTrackDrag;
+    private bool _trackDragHasWindowCapture;
 
     public bool AllowClose { get; set; }
+
+    public bool HideOnDeactivate { get; set; } = true;
 
     public MainWindow()
     {
@@ -247,6 +254,12 @@ public partial class MainWindow : Window
 
     private void Window_Deactivated(object sender, EventArgs e)
     {
+        if (!HideOnDeactivate)
+        {
+            return;
+        }
+
+        FinishTrackVolumeDrag();
         Dispatcher.BeginInvoke(() =>
         {
             if (!_isDeviceDropDownOpen && !_isDragging && !IsKeyboardFocusWithin)
@@ -286,9 +299,115 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (slider.Template.FindName("PART_Track", slider) is not Track track || track.ActualWidth <= 0)
+        if (slider.Template.FindName("PART_Track", slider) is not Track track ||
+            !SetSliderValueFromPointer(slider, track, e))
         {
             return;
+        }
+
+        _trackDragSlider = slider;
+        _trackDragTrack = track;
+        _trackDragRow = row;
+        _trackDragHasWindowCapture = false;
+        e.Handled = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_trackDragSlider != slider)
+            {
+                return;
+            }
+
+            if (Mouse.LeftButton != MouseButtonState.Pressed || !Mouse.Capture(this, CaptureMode.SubTree))
+            {
+                FinishTrackVolumeDrag();
+                return;
+            }
+
+            _trackDragHasWindowCapture = Mouse.Captured == this;
+            if (!_trackDragHasWindowCapture)
+            {
+                FinishTrackVolumeDrag();
+            }
+        }, DispatcherPriority.Input);
+    }
+
+    private void Window_PreviewMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (_trackDragSlider is null || _trackDragTrack is null)
+        {
+            return;
+        }
+
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            FinishTrackVolumeDrag();
+            return;
+        }
+
+        SetSliderValueFromPointer(_trackDragSlider, _trackDragTrack, e);
+        e.Handled = true;
+    }
+
+    private void Window_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_trackDragSlider is null || _trackDragTrack is null)
+        {
+            return;
+        }
+
+        SetSliderValueFromPointer(_trackDragSlider, _trackDragTrack, e);
+        FinishTrackVolumeDrag();
+        e.Handled = true;
+    }
+
+    private void Window_LostMouseCapture(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (!_isFinishingTrackDrag &&
+            _trackDragSlider is not null &&
+            _trackDragHasWindowCapture &&
+            Mouse.Captured != this)
+        {
+            FinishTrackVolumeDrag();
+        }
+    }
+
+    private void FinishTrackVolumeDrag()
+    {
+        if (_isFinishingTrackDrag || _trackDragSlider is null || _trackDragRow is null)
+        {
+            return;
+        }
+
+        _isFinishingTrackDrag = true;
+        var slider = _trackDragSlider;
+        var row = _trackDragRow;
+        _trackDragSlider = null;
+        _trackDragTrack = null;
+        _trackDragRow = null;
+        _trackDragHasWindowCapture = false;
+        try
+        {
+            if (Mouse.Captured == this)
+            {
+                Mouse.Capture(null);
+            }
+
+            CompleteVolumeInteraction(slider, row);
+        }
+        finally
+        {
+            _isFinishingTrackDrag = false;
+        }
+    }
+
+    private static bool SetSliderValueFromPointer(
+        Slider slider,
+        Track track,
+        System.Windows.Input.MouseEventArgs e)
+    {
+        if (track.ActualWidth <= 0)
+        {
+            return false;
         }
 
         slider.Value = VolumeSliderMath.ValueFromTrackPosition(
@@ -297,11 +416,7 @@ public partial class MainWindow : Window
             track.Thumb?.ActualWidth ?? 0,
             slider.Minimum,
             slider.Maximum);
-
-        _volumeDragChannels.Remove(row.Channel);
-        _volumeWriter.Queue(row.Channel, (float)Math.Clamp(slider.Value / 100d, 0d, 1d), isFinal: true);
-        ActionStatusText.Text = $"已调整{row.DisplayName}音量";
-        e.Handled = true;
+        return true;
     }
 
     private static bool IsThumbSource(DependencyObject source)
@@ -342,6 +457,11 @@ public partial class MainWindow : Window
     {
         if (sender is Slider { DataContext: ChannelRow row } slider)
         {
+            if (_trackDragSlider == slider)
+            {
+                return;
+            }
+
             CompleteVolumeInteraction(slider, row);
         }
     }
