@@ -19,8 +19,7 @@ public sealed class SonarClient : ISonarClient, IDisposable
 
     private readonly HttpClient _httpClient;
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
-    private IReadOnlyList<EqPreset>? _eqPresetCache;
-    private DateTimeOffset _eqPresetCacheUpdatedAt;
+    private readonly Dictionary<string, (IReadOnlyList<EqPreset> Presets, DateTimeOffset UpdatedAt)> _eqPresetCache = [];
 
     public SonarClient(Uri baseAddress, TimeSpan? timeout = null)
     {
@@ -33,15 +32,30 @@ public sealed class SonarClient : ISonarClient, IDisposable
         };
     }
 
-    public async Task<SonarSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default)
+    public Task<SonarSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default) =>
+        GetSnapshotAsync(includeHeavyData: true, cancellationToken);
+
+    public async Task<SonarSnapshot> GetSnapshotAsync(
+        bool includeHeavyData,
+        CancellationToken cancellationToken = default)
+        => await GetSnapshotAsync(includeHeavyData, includeHeavyData, cancellationToken).ConfigureAwait(false);
+
+    public async Task<SonarSnapshot> GetSnapshotAsync(
+        bool includeRoutingData,
+        bool includeEqPresets,
+        CancellationToken cancellationToken = default)
     {
         var modeTask = GetAsync<string>("/mode", cancellationToken);
         var volumesTask = GetAsync<VolumeSettingsDocument>("/volumeSettings/classic", cancellationToken);
         var devicesTask = GetAsync<List<AudioDeviceDto>>("/audioDevices", cancellationToken);
         var bindingsTask = GetAsync<List<ChannelBindingDto>>("/classicRedirections", cancellationToken);
-        var routingTask = GetAsync<List<DeviceSessionsDto>>("/AudioDeviceRouting", cancellationToken);
-        var presetsTask = GetEqPresetsAsync(cancellationToken);
         var selectedPresetsTask = GetAsync<List<SelectedEqPresetDto>>("/configs/selected", cancellationToken);
+        var routingTask = includeRoutingData
+            ? GetAsync<List<DeviceSessionsDto>>("/AudioDeviceRouting", cancellationToken)
+            : Task.FromResult(new List<DeviceSessionsDto>());
+        var presetsTask = includeEqPresets
+            ? GetAllEqPresetsAsync(cancellationToken)
+            : Task.FromResult<IReadOnlyList<EqPreset>>(Array.Empty<EqPreset>());
 
         await Task.WhenAll(modeTask, volumesTask, devicesTask, bindingsTask, routingTask, presetsTask, selectedPresetsTask).ConfigureAwait(false);
         return new SonarSnapshot(
@@ -240,24 +254,33 @@ public sealed class SonarClient : ISonarClient, IDisposable
         device.State ?? "unknown",
         device.IsVad);
 
-    private async Task<IReadOnlyList<EqPreset>> GetEqPresetsAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<EqPreset>> GetEqPresetsAsync(
+        string channel,
+        CancellationToken cancellationToken = default)
     {
-        if (_eqPresetCache is not null && DateTimeOffset.UtcNow - _eqPresetCacheUpdatedAt < EqPresetCacheLifetime)
+        if (!EqChannels.Contains(channel, StringComparer.Ordinal))
         {
-            return _eqPresetCache;
+            throw new ArgumentException($"Unknown EQ channel '{channel}'.", nameof(channel));
         }
 
-        var requests = EqChannels.Select(async channel => new
+        if (_eqPresetCache.TryGetValue(channel, out var cached) &&
+            DateTimeOffset.UtcNow - cached.UpdatedAt < EqPresetCacheLifetime)
         {
-            Channel = channel,
-            Presets = await GetAsync<List<EqPresetDto>>($"/presets/{channel}", cancellationToken).ConfigureAwait(false)
-        });
-        var results = await Task.WhenAll(requests).ConfigureAwait(false);
-        _eqPresetCache = results
-            .SelectMany(result => result.Presets.Select(preset => MapEqPreset(preset, result.Channel)))
+            return cached.Presets;
+        }
+
+        var presets = (await GetAsync<List<EqPresetDto>>($"/presets/{channel}", cancellationToken).ConfigureAwait(false))
+            .Select(preset => MapEqPreset(preset, channel))
             .ToArray();
-        _eqPresetCacheUpdatedAt = DateTimeOffset.UtcNow;
-        return _eqPresetCache;
+        _eqPresetCache[channel] = (presets, DateTimeOffset.UtcNow);
+        return presets;
+    }
+
+    private async Task<IReadOnlyList<EqPreset>> GetAllEqPresetsAsync(CancellationToken cancellationToken)
+    {
+        var results = await Task.WhenAll(EqChannels.Select(channel => GetEqPresetsAsync(channel, cancellationToken)))
+            .ConfigureAwait(false);
+        return results.SelectMany(presets => presets).ToArray();
     }
 
     private static EqPreset MapEqPreset(EqPresetDto preset, string channel) => new(

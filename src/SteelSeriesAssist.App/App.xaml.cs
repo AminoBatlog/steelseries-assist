@@ -53,6 +53,10 @@ public partial class App : System.Windows.Application
             }
         };
 
+        // Start discovery while the program is quietly resident in the tray, so opening the
+        // panel later usually reuses an already warm Sonar connection and EQ cache.
+        _mainWindow.LoadSonarStateAsync(showConnecting: false);
+
         if (isSmokeTest)
         {
             ShowPanel();

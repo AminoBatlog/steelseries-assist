@@ -40,8 +40,12 @@ public partial class MainWindow : Window
     private readonly VolumeWriteCoordinator _volumeWriter;
     private readonly Dictionary<string, ChannelRow> _channelRows = [];
     private readonly HashSet<string> _volumeDragChannels = [];
+    private readonly HashSet<string> _loadedEqChannels = [];
+    private readonly HashSet<string> _loadingEqChannels = [];
     private Uri? _eventBaseAddress;
     private bool _isLoading;
+    private bool _isDeferredLoading;
+    private bool _hasLoadedHeavyData;
     private bool _isFallbackLoading;
     private bool _isWriting;
     private bool _isDragging;
@@ -76,7 +80,7 @@ public partial class MainWindow : Window
             if (IsVisible && !_isLoading && !_isWriting && !_isDragging && !_isDeviceDropDownOpen &&
                 Mouse.LeftButton == MouseButtonState.Released)
             {
-                LoadSonarStateAsync(showConnecting: false);
+                LoadSonarStateAsync(showConnecting: false, includeRoutingData: true);
             }
         };
         _syncTimer.Start();
@@ -93,7 +97,10 @@ public partial class MainWindow : Window
         _volumeFallbackTimer.Start();
     }
 
-    public async void LoadSonarStateAsync(bool showConnecting = true)
+    public async void LoadSonarStateAsync(
+        bool showConnecting = true,
+        bool includeRoutingData = false,
+        bool includeEqPresets = false)
     {
         if (_isLoading)
         {
@@ -114,13 +121,13 @@ public partial class MainWindow : Window
             {
                 try
                 {
-                    snapshot = await _sonarClient.GetSnapshotAsync();
+                    snapshot = await _sonarClient.GetSnapshotAsync(includeRoutingData, includeEqPresets);
                 }
                 catch
                 {
                     _sonarClient.Dispose();
                     _sonarClient = null;
-                    var recovered = await _stateService.LoadAsync();
+                    var recovered = await _stateService.LoadAsync(includeRoutingData, includeEqPresets);
                     _sonarClient = new SonarClient(recovered.Endpoint.BaseAddress);
                     StartEventClient(recovered.Endpoint.BaseAddress);
                     snapshot = recovered.Snapshot;
@@ -128,7 +135,7 @@ public partial class MainWindow : Window
             }
             else
             {
-                var initial = await _stateService.LoadAsync();
+                var initial = await _stateService.LoadAsync(includeRoutingData, includeEqPresets);
                 _sonarClient = new SonarClient(initial.Endpoint.BaseAddress);
                 StartEventClient(initial.Endpoint.BaseAddress);
                 snapshot = initial.Snapshot;
@@ -158,9 +165,13 @@ public partial class MainWindow : Window
                     .ThenBy(preset => preset.FavoritePosition)
                     .ThenBy(preset => preset.Name)
                     .Select(preset => new EqOption(preset.Name, preset.Id, preset.IsFavorite))
-                    .ToArray();
-                var selectedEqId = snapshot.SelectedEqPresets
-                    .FirstOrDefault(preset => preset.Channel == volume.Channel)?.Id;
+                    .ToList();
+                var selectedEq = snapshot.SelectedEqPresets
+                    .FirstOrDefault(preset => preset.Channel == volume.Channel);
+                if (selectedEq is not null && !eqOptions.Any(option => option.Id == selectedEq.Id))
+                {
+                    eqOptions.Add(new EqOption(selectedEq.Name, selectedEq.Id, false));
+                }
                 return new ChannelRow(
                     volume.Channel,
                     ToBindingChannel(volume.Channel),
@@ -170,41 +181,44 @@ public partial class MainWindow : Window
                     options,
                     binding?.DeviceId,
                     eqOptions,
-                    selectedEqId,
+                    selectedEq?.Id,
                     CreateRoleBrush(volume.Channel));
             }).ToArray();
             ApplyChannelRows(nextRows);
 
-            var routeDevices = snapshot.Devices
-                .Where(device => device.State == "active" && device.IsVirtual && device.DataFlow == "render" &&
-                                 device.Role is "game" or "chatRender" or "media" or "aux")
-                .GroupBy(device => device.Role)
-                .Select(group => group.First())
-                .ToDictionary(device => device.Role, device => device);
-            RoutingLaneList.ItemsSource = routeDevices.Values
-                .OrderBy(device => RouteSortOrder(device.Role))
-                .Select(device =>
-                {
-                    var applications = snapshot.DeviceSessions
-                        .Where(route => route.DataFlow == "render" && route.Role == device.Role)
-                        .SelectMany(route => route.Sessions)
-                        .Where(session => session.State == "active" && !session.IsSystemSound && session.ProcessId > 0)
-                        .GroupBy(session => session.ProcessId)
-                        .Select(group => new RoutedApplication(
-                            group.First().DisplayName,
-                            group.Key,
-                            group.Count(),
-                            device.Role))
-                        .OrderBy(application => application.DisplayName)
-                        .ToArray();
-                    return new RoutingLane(
-                        ChannelNames.GetValueOrDefault(device.Role, device.Role),
-                        device.Role,
-                        device.Id,
-                        applications,
-                        CreateRoleBrush(device.Role));
-                })
-                .ToArray();
+            if (includeRoutingData)
+            {
+                var routeDevices = snapshot.Devices
+                    .Where(device => device.State == "active" && device.IsVirtual && device.DataFlow == "render" &&
+                                     device.Role is "game" or "chatRender" or "media" or "aux")
+                    .GroupBy(device => device.Role)
+                    .Select(group => group.First())
+                    .ToDictionary(device => device.Role, device => device);
+                RoutingLaneList.ItemsSource = routeDevices.Values
+                    .OrderBy(device => RouteSortOrder(device.Role))
+                    .Select(device =>
+                    {
+                        var applications = snapshot.DeviceSessions
+                            .Where(route => route.DataFlow == "render" && route.Role == device.Role)
+                            .SelectMany(route => route.Sessions)
+                            .Where(session => session.State == "active" && !session.IsSystemSound && session.ProcessId > 0)
+                            .GroupBy(session => session.ProcessId)
+                            .Select(group => new RoutedApplication(
+                                group.First().DisplayName,
+                                group.Key,
+                                group.Count(),
+                                device.Role))
+                            .OrderBy(application => application.DisplayName)
+                            .ToArray();
+                        return new RoutingLane(
+                            ChannelNames.GetValueOrDefault(device.Role, device.Role),
+                            device.Role,
+                            device.Id,
+                            applications,
+                            CreateRoleBrush(device.Role));
+                    })
+                    .ToArray();
+            }
             StatusText.Text = $"Sonar 已连接 · {snapshot.Devices.Count(device => device.State == "active")} 个活动设备";
             StatusDot.Fill = new SolidColorBrush(MediaColor.FromRgb(2, 221, 188));
         }
@@ -216,6 +230,18 @@ public partial class MainWindow : Window
         finally
         {
             _isLoading = false;
+            if (includeRoutingData)
+            {
+                _hasLoadedHeavyData = true;
+                _isDeferredLoading = false;
+            }
+            else if (!_hasLoadedHeavyData && !_isDeferredLoading)
+            {
+                _isDeferredLoading = true;
+                _ = Dispatcher.BeginInvoke(
+                    () => LoadSonarStateAsync(showConnecting: false, includeRoutingData: true),
+                    DispatcherPriority.Background);
+            }
         }
     }
 
@@ -726,12 +752,48 @@ public partial class MainWindow : Window
     private void EqComboBox_DropDownOpened(object sender, EventArgs e)
     {
         _isDeviceDropDownOpen = true;
-        if (sender is not System.Windows.Controls.ComboBox comboBox || comboBox.SelectedItem is null)
+        if (sender is not System.Windows.Controls.ComboBox comboBox || comboBox.DataContext is not ChannelRow row)
         {
             return;
         }
 
-        Dispatcher.BeginInvoke(() => CenterSelectedEqOption(comboBox), DispatcherPriority.ContextIdle);
+        if (comboBox.SelectedItem is not null)
+        {
+            _ = Dispatcher.BeginInvoke(() => CenterSelectedEqOption(comboBox), DispatcherPriority.ContextIdle);
+        }
+
+        _ = LoadEqOptionsAsync(row);
+    }
+
+    private async Task LoadEqOptionsAsync(ChannelRow row)
+    {
+        if (_sonarClient is null || _loadedEqChannels.Contains(row.Channel) || !_loadingEqChannels.Add(row.Channel))
+        {
+            return;
+        }
+
+        row.SetEqLoading(true);
+        try
+        {
+            var presets = await _sonarClient.GetEqPresetsAsync(row.Channel);
+            var options = presets
+                .OrderByDescending(preset => preset.IsFavorite)
+                .ThenBy(preset => preset.FavoritePosition)
+                .ThenBy(preset => preset.Name)
+                .Select(preset => new EqOption(preset.Name, preset.Id, preset.IsFavorite))
+                .ToArray();
+            row.UpdateEqOptions(options, row.SelectedEq?.Id);
+            _loadedEqChannels.Add(row.Channel);
+        }
+        catch (Exception exception)
+        {
+            ActionStatusText.Text = $"EQ 加载失败：{exception.Message}";
+        }
+        finally
+        {
+            row.SetEqLoading(false);
+            _loadingEqChannels.Remove(row.Channel);
+        }
     }
 
     private static void CenterSelectedEqOption(System.Windows.Controls.ComboBox comboBox)
@@ -794,7 +856,7 @@ public partial class MainWindow : Window
     private async void EqComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is not System.Windows.Controls.ComboBox { DataContext: ChannelRow row, SelectedItem: EqOption selected } ||
-            _sonarClient is null || selected.Id == row.SelectedEq?.Id)
+            _sonarClient is null || selected.IsLoading || selected.Id == row.SelectedEq?.Id)
         {
             return;
         }
@@ -988,6 +1050,7 @@ public partial class MainWindow : Window
     {
         private int _percent;
         private bool _muted;
+        private bool _isEqLoading;
         private int _lastNonZeroPercent;
         private string _eqSearchText = string.Empty;
         private int _firstVisibleNonFavoriteEqIndex;
@@ -1173,6 +1236,18 @@ public partial class MainWindow : Window
             OnPropertyChanged(nameof(HasEqOptions));
         }
 
+        public void SetEqLoading(bool isLoading)
+        {
+            if (_isEqLoading == isLoading)
+            {
+                return;
+            }
+
+            _isEqLoading = isLoading;
+            EqMenuOptions = BuildEqMenuOptions();
+            OnPropertyChanged(nameof(EqMenuOptions));
+        }
+
         public void LoadMoreEqOptions()
         {
             var matchingOthers = GetMatchingNonFavoriteEqOptions();
@@ -1220,6 +1295,11 @@ public partial class MainWindow : Window
 
         private IReadOnlyList<EqOption> BuildEqMenuOptions()
         {
+            if (_isEqLoading)
+            {
+                return SelectedEq is null ? [EqOption.Loading] : [SelectedEq, EqOption.Loading];
+            }
+
             if (string.IsNullOrWhiteSpace(_eqSearchText))
             {
                 // Keep the active preset visible even when it is not a favorite.  A ComboBox
@@ -1277,9 +1357,11 @@ public partial class MainWindow : Window
 
     private sealed record DeviceOption(string Name, string Id);
 
-    private sealed record EqOption(string Name, string Id, bool IsFavorite, bool IsSeparator = false)
+    private sealed record EqOption(string Name, string Id, bool IsFavorite, bool IsSeparator = false, bool IsLoading = false)
     {
         public static EqOption Separator { get; } = new(string.Empty, string.Empty, false, true);
+
+        public static EqOption Loading { get; } = new("正在加载 EQ…", string.Empty, false, false, true);
     }
 
     private sealed record RoutedApplication(
