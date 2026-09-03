@@ -34,10 +34,24 @@ public sealed record DeviceSessions(
     string DataFlow,
     IReadOnlyList<AudioSession> Sessions);
 
+public sealed record EqPreset(
+    string Id,
+    string Name,
+    string Channel,
+    bool IsFavorite,
+    int FavoritePosition);
+
+public sealed record SelectedEqPreset(
+    string Id,
+    string Name,
+    string Channel);
+
 public sealed record SonarSnapshot(
     string Mode,
     IReadOnlyList<ChannelVolume> Volumes,
     IReadOnlyList<AudioDevice> Devices,
     IReadOnlyList<ChannelBinding> Bindings,
     IReadOnlyList<DeviceSessions> DeviceSessions,
+    IReadOnlyList<EqPreset> EqPresets,
+    IReadOnlyList<SelectedEqPreset> SelectedEqPresets,
     DateTimeOffset CapturedAt);

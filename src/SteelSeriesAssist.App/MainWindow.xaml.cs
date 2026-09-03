@@ -152,6 +152,15 @@ public partial class MainWindow : Window
                         .Where(device => device.DataFlow == dataFlow)
                         .Select(device => new DeviceOption(device.FriendlyName, device.Id))
                         .ToArray();
+                var eqOptions = snapshot.EqPresets
+                    .Where(preset => preset.Channel == volume.Channel)
+                    .OrderByDescending(preset => preset.IsFavorite)
+                    .ThenBy(preset => preset.FavoritePosition)
+                    .ThenBy(preset => preset.Name)
+                    .Select(preset => new EqOption(preset.Name, preset.Id, preset.IsFavorite))
+                    .ToArray();
+                var selectedEqId = snapshot.SelectedEqPresets
+                    .FirstOrDefault(preset => preset.Channel == volume.Channel)?.Id;
                 return new ChannelRow(
                     volume.Channel,
                     ToBindingChannel(volume.Channel),
@@ -160,6 +169,8 @@ public partial class MainWindow : Window
                     volume.State.Muted,
                     options,
                     binding?.DeviceId,
+                    eqOptions,
+                    selectedEqId,
                     CreateRoleBrush(volume.Channel));
             }).ToArray();
             ApplyChannelRows(nextRows);
@@ -610,6 +621,7 @@ public partial class MainWindow : Window
                     next.Muted,
                     updateDisplayedVolume: !_volumeDragChannels.Contains(next.Channel));
                 current.UpdateDeviceOptions(next.DeviceOptions, next.BoundDeviceId);
+                current.UpdateEqOptions(next.AllEqOptions, next.SelectedEq?.Id);
             }
         }
         finally
@@ -709,6 +721,33 @@ public partial class MainWindow : Window
     private void DeviceComboBox_DropDownClosed(object sender, EventArgs e)
     {
         _isDeviceDropDownOpen = false;
+    }
+
+    private void EqComboBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (sender is not ScrollViewer { DataContext: ChannelRow row } ||
+            e.ViewportHeight <= 0 ||
+            e.VerticalOffset < e.ExtentHeight - e.ViewportHeight - 4)
+        {
+            return;
+        }
+
+        row.LoadMoreEqOptions();
+    }
+
+    private async void EqComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.ComboBox { DataContext: ChannelRow row, SelectedItem: EqOption selected } ||
+            _sonarClient is null || selected.Id == row.SelectedEq?.Id)
+        {
+            return;
+        }
+
+        await ExecuteWriteAsync(async () =>
+        {
+            await _sonarClient.SelectEqPresetAsync(selected.Id);
+            row.UpdateEqOptions(row.AllEqOptions, selected.Id);
+        }, $"{row.DisplayName}已切换到 {selected.Name}");
     }
 
     private void RoutedApplication_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -894,6 +933,10 @@ public partial class MainWindow : Window
         private int _percent;
         private bool _muted;
         private int _lastNonZeroPercent;
+        private string _eqSearchText = string.Empty;
+        private int _visibleNonFavoriteEqCount = InitialNonFavoriteEqCount;
+        private const int InitialNonFavoriteEqCount = 18;
+        private const int AdditionalNonFavoriteEqCount = 24;
 
         public ChannelRow(
             string channel,
@@ -903,6 +946,8 @@ public partial class MainWindow : Window
             bool muted,
             IReadOnlyList<DeviceOption> deviceOptions,
             string? boundDeviceId,
+            IReadOnlyList<EqOption> eqOptions,
+            string? selectedEqId,
             MediaBrush accentBrush)
         {
             Channel = channel;
@@ -915,6 +960,9 @@ public partial class MainWindow : Window
             DeviceOptions = deviceOptions;
             BoundDeviceId = boundDeviceId;
             SelectedDevice = deviceOptions.FirstOrDefault(device => device.Id == boundDeviceId);
+            AllEqOptions = eqOptions;
+            SelectedEq = eqOptions.FirstOrDefault(option => option.Id == selectedEqId);
+            EqMenuOptions = BuildEqMenuOptions();
             AccentBrush = accentBrush;
         }
 
@@ -932,11 +980,40 @@ public partial class MainWindow : Window
 
         public string? BoundDeviceId { get; private set; }
 
+        public IReadOnlyList<EqOption> AllEqOptions { get; private set; }
+
+        public IReadOnlyList<EqOption> EqMenuOptions { get; private set; }
+
+        public EqOption? SelectedEq { get; private set; }
+
         public MediaBrush AccentBrush { get; }
 
         public Visibility DeviceVisibility => BindingChannel is null ? Visibility.Collapsed : Visibility.Visible;
 
         public Visibility MasterVisibility => BindingChannel is null ? Visibility.Visible : Visibility.Collapsed;
+
+        public Visibility EqVisibility => BindingChannel is null ? Visibility.Collapsed : Visibility.Visible;
+
+        public bool HasEqOptions => AllEqOptions.Count > 0;
+
+        public string EqSearchText
+        {
+            get => _eqSearchText;
+            set
+            {
+                var normalized = value ?? string.Empty;
+                if (_eqSearchText == normalized)
+                {
+                    return;
+                }
+
+                _eqSearchText = normalized;
+                _visibleNonFavoriteEqCount = InitialNonFavoriteEqCount;
+                EqMenuOptions = BuildEqMenuOptions();
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(EqMenuOptions));
+            }
+        }
 
         public int Percent
         {
@@ -1018,11 +1095,100 @@ public partial class MainWindow : Window
             OnPropertyChanged(nameof(SelectedDevice));
         }
 
+        public void UpdateEqOptions(IReadOnlyList<EqOption> eqOptions, string? selectedEqId)
+        {
+            var optionsChanged = AllEqOptions.Count != eqOptions.Count || !AllEqOptions.SequenceEqual(eqOptions);
+            var selectedChanged = SelectedEq?.Id != selectedEqId;
+            if (!optionsChanged && !selectedChanged)
+            {
+                return;
+            }
+
+            AllEqOptions = eqOptions;
+            SelectedEq = eqOptions.FirstOrDefault(option => option.Id == selectedEqId);
+            EqMenuOptions = BuildEqMenuOptions();
+            OnPropertyChanged(nameof(AllEqOptions));
+            OnPropertyChanged(nameof(EqMenuOptions));
+            OnPropertyChanged(nameof(SelectedEq));
+            OnPropertyChanged(nameof(HasEqOptions));
+        }
+
+        public void LoadMoreEqOptions()
+        {
+            var matchingOtherCount = AllEqOptions.Count(option =>
+                !option.IsFavorite &&
+                (string.IsNullOrWhiteSpace(_eqSearchText) ||
+                 option.Name.Contains(_eqSearchText, StringComparison.OrdinalIgnoreCase)));
+            if (_visibleNonFavoriteEqCount >= matchingOtherCount)
+            {
+                return;
+            }
+
+            _visibleNonFavoriteEqCount = Math.Min(
+                _visibleNonFavoriteEqCount + AdditionalNonFavoriteEqCount,
+                matchingOtherCount);
+            EqMenuOptions = BuildEqMenuOptions();
+            OnPropertyChanged(nameof(EqMenuOptions));
+        }
+
+        private IReadOnlyList<EqOption> BuildEqMenuOptions()
+        {
+            if (string.IsNullOrWhiteSpace(_eqSearchText))
+            {
+                // Keep the active preset visible even when it is not a favorite.  A ComboBox
+                // cannot reliably retain/display a SelectedItem that has been removed from its
+                // ItemsSource, and this still avoids materializing the full game preset catalog.
+                var defaultOptions = AllEqOptions.Where(option => option.IsFavorite).ToList();
+                if (SelectedEq is { IsFavorite: false } selected &&
+                    !defaultOptions.Any(option => option.Id == selected.Id))
+                {
+                    defaultOptions.Insert(0, selected);
+                }
+
+                var otherOptions = AllEqOptions
+                    .Where(option => !option.IsFavorite && option.Id != SelectedEq?.Id)
+                    .Take(_visibleNonFavoriteEqCount)
+                    .ToArray();
+                return AppendOtherEqOptions(defaultOptions, otherOptions);
+            }
+
+            var favorites = AllEqOptions
+                .Where(option => option.IsFavorite && option.Name.Contains(_eqSearchText, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            var others = AllEqOptions
+                .Where(option => !option.IsFavorite && option.Name.Contains(_eqSearchText, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            return AppendOtherEqOptions(favorites, others.Take(_visibleNonFavoriteEqCount));
+        }
+
+        private static IReadOnlyList<EqOption> AppendOtherEqOptions(
+            IReadOnlyList<EqOption> favorites,
+            IEnumerable<EqOption> otherOptions)
+        {
+            var others = otherOptions.ToArray();
+            if (favorites.Count == 0)
+            {
+                return others;
+            }
+
+            if (others.Length == 0)
+            {
+                return favorites;
+            }
+
+            return favorites.Concat([EqOption.Separator]).Concat(others).ToArray();
+        }
+
         private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     private sealed record DeviceOption(string Name, string Id);
+
+    private sealed record EqOption(string Name, string Id, bool IsFavorite, bool IsSeparator = false)
+    {
+        public static EqOption Separator { get; } = new(string.Empty, string.Empty, false, true);
+    }
 
     private sealed record RoutedApplication(
         string DisplayName,

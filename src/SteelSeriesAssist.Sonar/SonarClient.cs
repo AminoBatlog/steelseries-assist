@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Globalization;
+using System.Text;
 using SteelSeriesAssist.Domain;
 
 namespace SteelSeriesAssist.Sonar;
@@ -13,8 +14,13 @@ public sealed class SonarClient : ISonarClient, IDisposable
     private static readonly HashSet<string> BindingChannels =
         ["game", "chat", "media", "aux", "mic"];
 
+    private static readonly string[] EqChannels = ["game", "chatRender", "chatCapture", "media", "aux"];
+    private static readonly TimeSpan EqPresetCacheLifetime = TimeSpan.FromMinutes(1);
+
     private readonly HttpClient _httpClient;
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
+    private IReadOnlyList<EqPreset>? _eqPresetCache;
+    private DateTimeOffset _eqPresetCacheUpdatedAt;
 
     public SonarClient(Uri baseAddress, TimeSpan? timeout = null)
     {
@@ -34,14 +40,18 @@ public sealed class SonarClient : ISonarClient, IDisposable
         var devicesTask = GetAsync<List<AudioDeviceDto>>("/audioDevices", cancellationToken);
         var bindingsTask = GetAsync<List<ChannelBindingDto>>("/classicRedirections", cancellationToken);
         var routingTask = GetAsync<List<DeviceSessionsDto>>("/AudioDeviceRouting", cancellationToken);
+        var presetsTask = GetEqPresetsAsync(cancellationToken);
+        var selectedPresetsTask = GetAsync<List<SelectedEqPresetDto>>("/configs/selected", cancellationToken);
 
-        await Task.WhenAll(modeTask, volumesTask, devicesTask, bindingsTask, routingTask).ConfigureAwait(false);
+        await Task.WhenAll(modeTask, volumesTask, devicesTask, bindingsTask, routingTask, presetsTask, selectedPresetsTask).ConfigureAwait(false);
         return new SonarSnapshot(
             await modeTask.ConfigureAwait(false),
             MapVolumes(await volumesTask.ConfigureAwait(false)),
             (await devicesTask.ConfigureAwait(false)).Select(MapDevice).ToArray(),
             (await bindingsTask.ConfigureAwait(false)).Select(MapBinding).ToArray(),
             (await routingTask.ConfigureAwait(false)).Select(MapDeviceSessions).ToArray(),
+            await presetsTask.ConfigureAwait(false),
+            (await selectedPresetsTask.ConfigureAwait(false)).Select(MapSelectedEqPreset).ToArray(),
             DateTimeOffset.UtcNow);
     }
 
@@ -102,6 +112,25 @@ public sealed class SonarClient : ISonarClient, IDisposable
         return MapBinding(response);
     }
 
+    public async Task SelectEqPresetAsync(string presetId, CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(presetId, out _))
+        {
+            throw new ArgumentException("A valid EQ preset ID is required.", nameof(presetId));
+        }
+
+        // GG submits this as a JSON PUT, then refreshes /configs/selected.  Matching both steps
+        // avoids treating a locally changed ComboBox selection as a completed Sonar configuration switch.
+        await PutJsonAsync($"/configs/{Uri.EscapeDataString(presetId)}/select", cancellationToken)
+            .ConfigureAwait(false);
+        var selected = await GetAsync<List<SelectedEqPresetDto>>("/configs/selected", cancellationToken)
+            .ConfigureAwait(false);
+        if (!selected.Any(config => string.Equals(config.Id, presetId, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new InvalidDataException("Sonar did not confirm the EQ preset switch.");
+        }
+    }
+
     public Task RouteApplicationAsync(
         string dataFlow,
         string targetDeviceId,
@@ -142,6 +171,16 @@ public sealed class SonarClient : ISonarClient, IDisposable
     private async Task PutAsync(string path, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, path);
+        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
+    }
+
+    private async Task PutJsonAsync(string path, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, path)
+        {
+            Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+        };
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
     }
@@ -201,6 +240,38 @@ public sealed class SonarClient : ISonarClient, IDisposable
         device.State ?? "unknown",
         device.IsVad);
 
+    private async Task<IReadOnlyList<EqPreset>> GetEqPresetsAsync(CancellationToken cancellationToken)
+    {
+        if (_eqPresetCache is not null && DateTimeOffset.UtcNow - _eqPresetCacheUpdatedAt < EqPresetCacheLifetime)
+        {
+            return _eqPresetCache;
+        }
+
+        var requests = EqChannels.Select(async channel => new
+        {
+            Channel = channel,
+            Presets = await GetAsync<List<EqPresetDto>>($"/presets/{channel}", cancellationToken).ConfigureAwait(false)
+        });
+        var results = await Task.WhenAll(requests).ConfigureAwait(false);
+        _eqPresetCache = results
+            .SelectMany(result => result.Presets.Select(preset => MapEqPreset(preset, result.Channel)))
+            .ToArray();
+        _eqPresetCacheUpdatedAt = DateTimeOffset.UtcNow;
+        return _eqPresetCache;
+    }
+
+    private static EqPreset MapEqPreset(EqPresetDto preset, string channel) => new(
+        preset.Id ?? string.Empty,
+        preset.Name ?? "Unknown EQ",
+        channel,
+        preset.IsFavorite,
+        preset.FavoritePosition);
+
+    private static SelectedEqPreset MapSelectedEqPreset(SelectedEqPresetDto preset) => new(
+        preset.Id ?? string.Empty,
+        preset.Name ?? "Unknown EQ",
+        preset.VirtualAudioDevice ?? string.Empty);
+
     private static ChannelBinding MapBinding(ChannelBindingDto binding) => new(
         binding.Id ?? "unknown",
         binding.DeviceId ?? string.Empty,
@@ -255,6 +326,17 @@ public sealed class SonarClient : ISonarClient, IDisposable
         [property: JsonPropertyName("id")] string? Id,
         [property: JsonPropertyName("deviceId")] string? DeviceId,
         [property: JsonPropertyName("isRunning")] bool IsRunning);
+
+    internal sealed record EqPresetDto(
+        [property: JsonPropertyName("id")] string? Id,
+        [property: JsonPropertyName("name")] string? Name,
+        [property: JsonPropertyName("isFavorite")] bool IsFavorite,
+        [property: JsonPropertyName("favoritePosition")] int FavoritePosition);
+
+    internal sealed record SelectedEqPresetDto(
+        [property: JsonPropertyName("id")] string? Id,
+        [property: JsonPropertyName("name")] string? Name,
+        [property: JsonPropertyName("virtualAudioDevice")] string? VirtualAudioDevice);
 
     internal sealed record DeviceSessionsDto(
         [property: JsonPropertyName("deviceId")] string? DeviceId,

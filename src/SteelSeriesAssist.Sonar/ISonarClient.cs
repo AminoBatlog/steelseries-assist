@@ -24,6 +24,10 @@ public interface ISonarClient
         string deviceId,
         CancellationToken cancellationToken = default);
 
+    Task SelectEqPresetAsync(
+        string presetId,
+        CancellationToken cancellationToken = default);
+
     Task RouteApplicationAsync(
         string dataFlow,
         string targetDeviceId,
