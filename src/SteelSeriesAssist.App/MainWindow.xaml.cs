@@ -723,16 +723,72 @@ public partial class MainWindow : Window
         _isDeviceDropDownOpen = false;
     }
 
-    private void EqComboBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    private void EqComboBox_DropDownOpened(object sender, EventArgs e)
     {
-        if (sender is not ScrollViewer { DataContext: ChannelRow row } ||
-            e.ViewportHeight <= 0 ||
-            e.VerticalOffset < e.ExtentHeight - e.ViewportHeight - 4)
+        _isDeviceDropDownOpen = true;
+        if (sender is not System.Windows.Controls.ComboBox comboBox || comboBox.SelectedItem is null)
         {
             return;
         }
 
-        row.LoadMoreEqOptions();
+        Dispatcher.BeginInvoke(() => CenterSelectedEqOption(comboBox), DispatcherPriority.ContextIdle);
+    }
+
+    private static void CenterSelectedEqOption(System.Windows.Controls.ComboBox comboBox)
+    {
+        if (comboBox.Template.FindName("PART_Popup", comboBox) is not Popup { Child: DependencyObject popupChild } ||
+            FindVisualDescendant<ScrollViewer>(popupChild) is not { ViewportHeight: > 0 } scrollViewer)
+        {
+            return;
+        }
+
+        var selectedIndex = comboBox.Items.IndexOf(comboBox.SelectedItem);
+        if (selectedIndex < 0)
+        {
+            return;
+        }
+
+        // EQ rows are 28px high (the divider is smaller).  This approximate offset avoids
+        // forcing realization of the entire preset list solely to measure one item.
+        const double eqRowHeight = 28;
+        var targetOffset = selectedIndex * eqRowHeight - (scrollViewer.ViewportHeight - eqRowHeight) / 2;
+        scrollViewer.ScrollToVerticalOffset(Math.Max(0, targetOffset));
+    }
+
+    private static T? FindVisualDescendant<T>(DependencyObject root) where T : DependencyObject
+    {
+        if (root is T found)
+        {
+            return found;
+        }
+
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(root); index++)
+        {
+            var descendant = FindVisualDescendant<T>(VisualTreeHelper.GetChild(root, index));
+            if (descendant is not null)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
+    }
+
+    private void EqComboBox_ScrollChanged(object sender, ScrollChangedEventArgs e)
+    {
+        if (sender is not ScrollViewer { DataContext: ChannelRow row } || e.ViewportHeight <= 0)
+        {
+            return;
+        }
+
+        if (e.VerticalChange > 0 && e.VerticalOffset >= e.ExtentHeight - e.ViewportHeight - 4)
+        {
+            row.LoadMoreEqOptions();
+        }
+        else if (e.VerticalChange < 0 && e.VerticalOffset <= 4)
+        {
+            row.LoadPreviousEqOptions();
+        }
     }
 
     private async void EqComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -934,6 +990,7 @@ public partial class MainWindow : Window
         private bool _muted;
         private int _lastNonZeroPercent;
         private string _eqSearchText = string.Empty;
+        private int _firstVisibleNonFavoriteEqIndex;
         private int _visibleNonFavoriteEqCount = InitialNonFavoriteEqCount;
         private const int InitialNonFavoriteEqCount = 18;
         private const int AdditionalNonFavoriteEqCount = 24;
@@ -962,6 +1019,7 @@ public partial class MainWindow : Window
             SelectedDevice = deviceOptions.FirstOrDefault(device => device.Id == boundDeviceId);
             AllEqOptions = eqOptions;
             SelectedEq = eqOptions.FirstOrDefault(option => option.Id == selectedEqId);
+            ResetEqOptionWindow();
             EqMenuOptions = BuildEqMenuOptions();
             AccentBrush = accentBrush;
         }
@@ -1008,6 +1066,7 @@ public partial class MainWindow : Window
                 }
 
                 _eqSearchText = normalized;
+                _firstVisibleNonFavoriteEqIndex = 0;
                 _visibleNonFavoriteEqCount = InitialNonFavoriteEqCount;
                 EqMenuOptions = BuildEqMenuOptions();
                 OnPropertyChanged();
@@ -1106,6 +1165,7 @@ public partial class MainWindow : Window
 
             AllEqOptions = eqOptions;
             SelectedEq = eqOptions.FirstOrDefault(option => option.Id == selectedEqId);
+            ResetEqOptionWindow();
             EqMenuOptions = BuildEqMenuOptions();
             OnPropertyChanged(nameof(AllEqOptions));
             OnPropertyChanged(nameof(EqMenuOptions));
@@ -1115,20 +1175,47 @@ public partial class MainWindow : Window
 
         public void LoadMoreEqOptions()
         {
-            var matchingOtherCount = AllEqOptions.Count(option =>
-                !option.IsFavorite &&
-                (string.IsNullOrWhiteSpace(_eqSearchText) ||
-                 option.Name.Contains(_eqSearchText, StringComparison.OrdinalIgnoreCase)));
-            if (_visibleNonFavoriteEqCount >= matchingOtherCount)
+            var matchingOthers = GetMatchingNonFavoriteEqOptions();
+            if (_firstVisibleNonFavoriteEqIndex + _visibleNonFavoriteEqCount >= matchingOthers.Count)
             {
                 return;
             }
 
             _visibleNonFavoriteEqCount = Math.Min(
                 _visibleNonFavoriteEqCount + AdditionalNonFavoriteEqCount,
-                matchingOtherCount);
+                matchingOthers.Count - _firstVisibleNonFavoriteEqIndex);
             EqMenuOptions = BuildEqMenuOptions();
             OnPropertyChanged(nameof(EqMenuOptions));
+        }
+
+        public void LoadPreviousEqOptions()
+        {
+            if (_firstVisibleNonFavoriteEqIndex == 0)
+            {
+                return;
+            }
+
+            var addedCount = Math.Min(AdditionalNonFavoriteEqCount, _firstVisibleNonFavoriteEqIndex);
+            _firstVisibleNonFavoriteEqIndex -= addedCount;
+            _visibleNonFavoriteEqCount += addedCount;
+            EqMenuOptions = BuildEqMenuOptions();
+            OnPropertyChanged(nameof(EqMenuOptions));
+        }
+
+        private void ResetEqOptionWindow()
+        {
+            _visibleNonFavoriteEqCount = InitialNonFavoriteEqCount;
+            if (!string.IsNullOrWhiteSpace(_eqSearchText) || SelectedEq is not { IsFavorite: false } selected)
+            {
+                _firstVisibleNonFavoriteEqIndex = 0;
+                return;
+            }
+
+            var selectedIndex = AllEqOptions
+                .Where(option => !option.IsFavorite)
+                .ToList()
+                .FindIndex(option => option.Id == selected.Id);
+            _firstVisibleNonFavoriteEqIndex = Math.Max(0, selectedIndex - InitialNonFavoriteEqCount / 2);
         }
 
         private IReadOnlyList<EqOption> BuildEqMenuOptions()
@@ -1145,21 +1232,26 @@ public partial class MainWindow : Window
                     defaultOptions.Insert(0, selected);
                 }
 
-                var otherOptions = AllEqOptions
-                    .Where(option => !option.IsFavorite && option.Id != SelectedEq?.Id)
-                    .Take(_visibleNonFavoriteEqCount)
-                    .ToArray();
+                var otherOptions = GetMatchingNonFavoriteEqOptions()
+                    .Skip(_firstVisibleNonFavoriteEqIndex)
+                    .Take(_visibleNonFavoriteEqCount);
                 return AppendOtherEqOptions(defaultOptions, otherOptions);
             }
 
             var favorites = AllEqOptions
                 .Where(option => option.IsFavorite && option.Name.Contains(_eqSearchText, StringComparison.OrdinalIgnoreCase))
                 .ToArray();
-            var others = AllEqOptions
-                .Where(option => !option.IsFavorite && option.Name.Contains(_eqSearchText, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
-            return AppendOtherEqOptions(favorites, others.Take(_visibleNonFavoriteEqCount));
+            var others = GetMatchingNonFavoriteEqOptions()
+                .Skip(_firstVisibleNonFavoriteEqIndex)
+                .Take(_visibleNonFavoriteEqCount);
+            return AppendOtherEqOptions(favorites, others);
         }
+
+        private IReadOnlyList<EqOption> GetMatchingNonFavoriteEqOptions() => AllEqOptions
+            .Where(option => !option.IsFavorite &&
+                             (string.IsNullOrWhiteSpace(_eqSearchText) ||
+                              option.Name.Contains(_eqSearchText, StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
 
         private static IReadOnlyList<EqOption> AppendOtherEqOptions(
             IReadOnlyList<EqOption> favorites,

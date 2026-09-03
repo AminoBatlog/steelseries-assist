@@ -575,7 +575,7 @@
                                                           DisplayMemberPath="Name"
                                                           ToolTip="收藏的 EQ"
                                                           IsEnabled="{Binding HasEqOptions}"
-                                                          DropDownOpened="DeviceComboBox_DropDownOpened"
+                                                          DropDownOpened="EqComboBox_DropDownOpened"
                                                           DropDownClosed="DeviceComboBox_DropDownClosed"
                                                           SelectionChanged="EqComboBox_SelectionChanged" />
                                             </StackPanel>
