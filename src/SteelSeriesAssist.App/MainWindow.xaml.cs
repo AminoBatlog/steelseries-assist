@@ -1047,7 +1047,10 @@ public partial class MainWindow : Window
             await _sonarClient.RouteApplicationAsync("render", lane.DeviceId, application.ProcessId);
             await Task.Delay(250);
         }, $"{application.DisplayName}的默认输出已设为 {lane.Name}");
-        LoadSonarStateAsync();
+        // Route cards are sourced from /AudioDeviceRouting, which is intentionally omitted
+        // from normal lightweight refreshes. Refresh it immediately after a successful drop
+        // instead of waiting for the five-second background polling interval.
+        LoadSonarStateAsync(showConnecting: false, includeRoutingData: true);
     }
 
     private async Task ExecuteWriteAsync(Func<Task> operation, string successMessage)
