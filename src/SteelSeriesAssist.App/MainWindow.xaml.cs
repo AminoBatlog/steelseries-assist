@@ -184,7 +184,7 @@ public partial class MainWindow : Window
                     selectedEq?.Id,
                     CreateRoleBrush(volume.Channel));
             }).ToArray();
-            ApplyChannelRows(nextRows);
+            ApplyChannelRows(nextRows, snapshot.EqPresets.Count > 0);
 
             if (includeRoutingData)
             {
@@ -620,13 +620,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ApplyChannelRows(IReadOnlyList<ChannelRow> nextRows)
+    private void ApplyChannelRows(IReadOnlyList<ChannelRow> nextRows, bool includesCompleteEqCatalog)
     {
         var topologyChanged = _channelRows.Count != nextRows.Count ||
                               nextRows.Any(row => !_channelRows.ContainsKey(row.Channel));
         if (topologyChanged)
         {
             _channelRows.Clear();
+            _loadedEqChannels.Clear();
+            _loadingEqChannels.Clear();
             foreach (var row in nextRows)
             {
                 _channelRows.Add(row.Channel, row);
@@ -647,7 +649,17 @@ public partial class MainWindow : Window
                     next.Muted,
                     updateDisplayedVolume: !_volumeDragChannels.Contains(next.Channel));
                 current.UpdateDeviceOptions(next.DeviceOptions, next.BoundDeviceId);
-                current.UpdateEqOptions(next.AllEqOptions, next.SelectedEq?.Id);
+                if (includesCompleteEqCatalog)
+                {
+                    current.UpdateEqOptions(next.AllEqOptions, next.SelectedEq?.Id);
+                    _loadedEqChannels.Add(next.Channel);
+                }
+                else if (current.UpdateSelectedEq(next.SelectedEq, _loadedEqChannels.Contains(next.Channel)))
+                {
+                    // The selected EQ is not part of our cached catalogue (for example it was
+                    // created in GG). Reload this channel the next time its menu is opened.
+                    _loadedEqChannels.Remove(next.Channel);
+                }
             }
         }
         finally
@@ -1234,6 +1246,30 @@ public partial class MainWindow : Window
             OnPropertyChanged(nameof(EqMenuOptions));
             OnPropertyChanged(nameof(SelectedEq));
             OnPropertyChanged(nameof(HasEqOptions));
+        }
+
+        public bool UpdateSelectedEq(EqOption? selectedEq, bool preserveLoadedOptions)
+        {
+            if (SelectedEq?.Id == selectedEq?.Id && SelectedEq?.Name == selectedEq?.Name)
+            {
+                return false;
+            }
+
+            var selectedWasMissing = preserveLoadedOptions && selectedEq is not null &&
+                                     !AllEqOptions.Any(option => option.Id == selectedEq.Id);
+            AllEqOptions = preserveLoadedOptions
+                ? selectedWasMissing
+                    ? AllEqOptions.Concat([selectedEq!]).ToArray()
+                    : AllEqOptions
+                : selectedEq is null ? Array.Empty<EqOption>() : [selectedEq];
+            SelectedEq = selectedEq;
+            ResetEqOptionWindow();
+            EqMenuOptions = BuildEqMenuOptions();
+            OnPropertyChanged(nameof(AllEqOptions));
+            OnPropertyChanged(nameof(EqMenuOptions));
+            OnPropertyChanged(nameof(SelectedEq));
+            OnPropertyChanged(nameof(HasEqOptions));
+            return selectedWasMissing;
         }
 
         public void SetEqLoading(bool isLoading)
