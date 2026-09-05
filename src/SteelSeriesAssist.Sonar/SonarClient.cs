@@ -256,14 +256,15 @@ public sealed class SonarClient : ISonarClient, IDisposable
 
     public async Task<IReadOnlyList<EqPreset>> GetEqPresetsAsync(
         string channel,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool forceRefresh = false)
     {
         if (!EqChannels.Contains(channel, StringComparer.Ordinal))
         {
             throw new ArgumentException($"Unknown EQ channel '{channel}'.", nameof(channel));
         }
 
-        if (_eqPresetCache.TryGetValue(channel, out var cached) &&
+        if (!forceRefresh && _eqPresetCache.TryGetValue(channel, out var cached) &&
             DateTimeOffset.UtcNow - cached.UpdatedAt < EqPresetCacheLifetime)
         {
             return cached.Presets;

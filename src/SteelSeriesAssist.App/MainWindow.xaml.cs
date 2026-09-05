@@ -779,15 +779,23 @@ public partial class MainWindow : Window
 
     private async Task LoadEqOptionsAsync(ChannelRow row)
     {
-        if (_sonarClient is null || _loadedEqChannels.Contains(row.Channel) || !_loadingEqChannels.Add(row.Channel))
+        if (_sonarClient is null || !_loadingEqChannels.Add(row.Channel))
         {
             return;
         }
 
-        row.SetEqLoading(true);
+        var hadCachedOptions = _loadedEqChannels.Contains(row.Channel);
+        if (!hadCachedOptions)
+        {
+            row.SetEqLoading(true);
+        }
+
         try
         {
-            var presets = await _sonarClient.GetEqPresetsAsync(row.Channel);
+            // Revalidate a channel when its menu is opened. GG does not provide a dependable
+            // preset-catalogue-changed event, so retaining the old list forever would hide
+            // presets added, deleted, or re-favorited in GG.
+            var presets = await _sonarClient.GetEqPresetsAsync(row.Channel, forceRefresh: hadCachedOptions);
             var options = presets
                 .OrderByDescending(preset => preset.IsFavorite)
                 .ThenBy(preset => preset.FavoritePosition)
@@ -803,7 +811,11 @@ public partial class MainWindow : Window
         }
         finally
         {
-            row.SetEqLoading(false);
+            if (!hadCachedOptions)
+            {
+                row.SetEqLoading(false);
+            }
+
             _loadingEqChannels.Remove(row.Channel);
         }
     }
