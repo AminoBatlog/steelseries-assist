@@ -1,13 +1,17 @@
 <Window x:Class="SteelSeriesAssist.App.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:SteelSeriesAssist.App"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="SteelSeries Assist"
         Icon="Assets/steelseries-assist.ico"
         Width="460"
-        Height="560"
+        Height="720"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
-        WindowStyle="ToolWindow"
+        WindowStyle="None"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
         Background="#171F24"
         AllowDrop="True"
         PreviewMouseMove="Window_PreviewMouseMove"
@@ -16,6 +20,10 @@
         PreviewDragOver="Window_PreviewDragOver"
         Deactivated="Window_Deactivated"
         Closing="Window_Closing">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="56" ResizeBorderThickness="0" GlassFrameThickness="0"
+                            CornerRadius="0" UseAeroCaptionButtons="False" />
+    </shell:WindowChrome.WindowChrome>
     <Window.Resources>
         <Style x:Key="ScrollPageButtonStyle" TargetType="RepeatButton">
             <Setter Property="Focusable" Value="False" />
@@ -518,20 +526,52 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <DockPanel>
-            <TextBlock Foreground="#D0D9F6" FontSize="22" FontWeight="SemiBold"
-                       Text="SteelSeries Assist" />
-            <Ellipse x:Name="StatusDot" DockPanel.Dock="Right" Width="9" Height="9"
-                     Margin="8" Fill="#61697A" />
+        <Grid Height="30">
+            <TextBlock Text="SteelSeries Assist" Margin="0,0,44,0" FontSize="18" FontWeight="SemiBold"
+                       Foreground="#D0D9F6" VerticalAlignment="Center" IsHitTestVisible="False" />
+            <Button x:Name="CloseToTrayButton" HorizontalAlignment="Right" VerticalAlignment="Center"
+                    Width="30" Height="26" Click="CloseToTray_Click"
+                    shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                    ToolTip="收起到托盘" AutomationProperties.Name="收起到托盘" FocusVisualStyle="{x:Null}">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="CloseSurface" CornerRadius="5" Background="Transparent"
+                                BorderThickness="1" BorderBrush="Transparent">
+                            <Path x:Name="CloseGlyph" Width="10" Height="10" Stretch="None"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Stroke="#97A3B1" StrokeThickness="1.1" StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round" Data="M1,1 L9,9 M9,1 L1,9" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CloseSurface" Property="Background" Value="#B5261B" />
+                                <Setter TargetName="CloseGlyph" Property="Stroke" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="CloseSurface" Property="Background" Value="#9F2118" />
+                                <Setter TargetName="CloseGlyph" Property="Stroke" Value="#F5E9E8" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="CloseSurface" Property="BorderBrush" Value="#8996CF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+        </Grid>
+        <DockPanel Grid.Row="1" Margin="0,8,0,16" LastChildFill="True">
+            <Ellipse x:Name="StatusDot" Width="6" Height="6" Margin="0,0,7,0"
+                     VerticalAlignment="Center" Fill="#61697A" />
+            <TextBlock x:Name="StatusText" Foreground="#868FA2" Text="正在连接 Sonar…"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
         </DockPanel>
-
-        <TextBlock x:Name="StatusText" Grid.Row="1" Margin="0,8,0,16"
-                   Foreground="#868FA2" Text="正在连接 Sonar…" />
 
         <TabControl Grid.Row="2" Style="{StaticResource MainTabControlStyle}">
             <TabItem Header="音量与设备">
                 <ScrollViewer Margin="0,10,0,0" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch">
+                    <StackPanel>
+                    <local:ChatMixControl x:Name="ChatMix" />
                     <ItemsControl x:Name="ChannelList" HorizontalContentAlignment="Stretch">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -602,6 +642,7 @@
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+                    </StackPanel>
                 </ScrollViewer>
             </TabItem>
             <TabItem Header="应用路由">

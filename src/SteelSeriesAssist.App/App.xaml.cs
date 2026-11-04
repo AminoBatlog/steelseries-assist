@@ -11,6 +11,8 @@ public partial class App : System.Windows.Application
     private Icon? _applicationIcon;
     private MainWindow? _mainWindow;
     private Mutex? _singleInstanceMutex;
+    private Forms.ContextMenuStrip? _trayMenu;
+    private bool _isExiting;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -29,11 +31,47 @@ public partial class App : System.Windows.Application
         }
 
         _mainWindow = new MainWindow();
+        _mainWindow.DpiChanged += (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            if (_mainWindow?.IsVisible == true) PanelPlacement.Place(_mainWindow, atCursor: false);
+        });
         _mainWindow.HideOnDeactivate = !isSmokeTest;
         MainWindow = _mainWindow;
 
         var menu = new Forms.ContextMenuStrip();
+        _trayMenu = menu;
         menu.Items.Add("打开控制面板", null, (_, _) => ShowPanel());
+        var startupItem = new Forms.ToolStripMenuItem("开机启动")
+        {
+            ToolTipText = "登录 Windows 后静默启动到托盘；请先将便携版放到固定目录。"
+        };
+        menu.Items.Add(startupItem);
+        menu.Opening += (_, _) =>
+        {
+            try
+            {
+                startupItem.Checked = StartupRegistration.IsEnabled();
+                startupItem.Enabled = true;
+            }
+            catch (Exception exception)
+            {
+                startupItem.Checked = false;
+                startupItem.Enabled = false;
+                startupItem.ToolTipText = $"无法读取启动设置：{exception.Message}";
+            }
+        };
+        startupItem.Click += (_, _) =>
+        {
+            try
+            {
+                StartupRegistration.SetEnabled(!startupItem.Checked);
+                startupItem.Checked = StartupRegistration.IsEnabled();
+            }
+            catch (Exception exception)
+            {
+                _trayIcon?.ShowBalloonTip(5000, "开机启动设置失败", exception.Message, Forms.ToolTipIcon.Error);
+            }
+        };
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("退出", null, (_, _) => ExitApplication());
 
@@ -79,6 +117,7 @@ public partial class App : System.Windows.Application
         }
 
         _applicationIcon?.Dispose();
+        _trayMenu?.Dispose();
 
         _singleInstanceMutex?.Dispose();
 
@@ -104,22 +143,30 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        var workArea = SystemParameters.WorkArea;
-        _mainWindow.Left = workArea.Right - _mainWindow.Width - 12;
-        _mainWindow.Top = workArea.Bottom - _mainWindow.Height - 12;
+        PanelPlacement.Place(_mainWindow, atCursor: true);
         _mainWindow.Show();
+        PanelPlacement.Place(_mainWindow, atCursor: true);
         _mainWindow.Activate();
         _mainWindow.LoadSonarStateAsync();
     }
 
-    private void ExitApplication()
+    private async void ExitApplication()
     {
-        if (_mainWindow is not null)
+        if (_isExiting) return;
+        _isExiting = true;
+        if (_trayIcon is not null) _trayIcon.Visible = false;
+        try
         {
-            _mainWindow.AllowClose = true;
-            _mainWindow.Close();
+            if (_mainWindow is not null) await _mainWindow.ShutdownAsync();
         }
-
-        Shutdown();
+        finally
+        {
+            if (_mainWindow is not null)
+            {
+                _mainWindow.AllowClose = true;
+                _mainWindow.Close();
+            }
+            Shutdown();
+        }
     }
 }

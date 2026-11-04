@@ -14,6 +14,9 @@
     <Product>SteelSeries Assist</Product>
     <Description>SteelSeries GG Sonar 的轻量级托盘控制面板</Description>
     <ApplicationIcon>Assets\steelseries-assist.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WPF owns startup; the WinForms tray interop does not run ApplicationConfiguration.Initialize. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\SteelSeriesAssist.Application\SteelSeriesAssist.Application.csproj" />

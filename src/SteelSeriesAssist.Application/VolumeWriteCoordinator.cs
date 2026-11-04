@@ -8,7 +8,8 @@ public sealed class VolumeWriteCoordinator : IAsyncDisposable
     private readonly Dictionary<string, ChannelWriteState> _channels = [];
     private readonly Func<string, float, CancellationToken, Task<VolumeState>> _writeAsync;
     private readonly TimeSpan _minimumInterval;
-    private readonly CancellationTokenSource _lifetimeCancellation = new();
+    private readonly AsyncOperationScope _operations = new();
+    private bool _stopping;
 
     public VolumeWriteCoordinator(
         Func<string, float, CancellationToken, Task<VolumeState>> writeAsync,
@@ -36,6 +37,7 @@ public sealed class VolumeWriteCoordinator : IAsyncDisposable
 
         lock (_sync)
         {
+            ObjectDisposedException.ThrowIf(_stopping, this);
             if (!_channels.TryGetValue(channel, out var state))
             {
                 state = new ChannelWriteState();
@@ -48,33 +50,18 @@ public sealed class VolumeWriteCoordinator : IAsyncDisposable
             if (!state.IsRunning)
             {
                 state.IsRunning = true;
-                state.LoopTask = Task.Run(() => RunChannelAsync(channel, state, _lifetimeCancellation.Token));
+                state.LoopTask = _operations.RunAsync(token => Task.Run(() => RunChannelAsync(channel, state, token)));
             }
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        _lifetimeCancellation.Cancel();
-        Task[] tasks;
         lock (_sync)
         {
-            tasks = _channels.Values
-                .Select(state => state.LoopTask)
-                .Where(task => task is not null)
-                .Cast<Task>()
-                .ToArray();
+            _stopping = true;
         }
-
-        try
-        {
-            await Task.WhenAll(tasks).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-        }
-
-        _lifetimeCancellation.Dispose();
+        return _operations.DisposeAsync();
     }
 
     private async Task RunChannelAsync(

@@ -6,7 +6,7 @@ using SteelSeriesAssist.Domain;
 
 namespace SteelSeriesAssist.Sonar;
 
-public sealed class SonarClient : ISonarClient, IDisposable
+public sealed partial class SonarClient : ISonarClient, IDisposable
 {
     private static readonly HashSet<string> VolumeChannels =
         ["master", "game", "chatRender", "chatCapture", "media", "aux"];

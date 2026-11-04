@@ -4,6 +4,10 @@ namespace SteelSeriesAssist.Sonar;
 
 public interface ISonarClient
 {
+    Task<ChatMixState> GetChatMixAsync(CancellationToken cancellationToken = default);
+
+    Task<ChatMixState> SetChatMixAsync(float balance, CancellationToken cancellationToken = default);
+
     Task<SonarSnapshot> GetSnapshotAsync(CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ChannelVolume>> GetClassicVolumesAsync(

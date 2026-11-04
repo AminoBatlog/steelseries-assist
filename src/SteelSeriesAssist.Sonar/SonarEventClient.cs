@@ -1,5 +1,4 @@
 using System.Net.WebSockets;
-using System.Text;
 using System.Text.Json;
 using SteelSeriesAssist.Domain;
 
@@ -12,59 +11,63 @@ public sealed class SonarEventClient : IAsyncDisposable
     private static readonly TimeSpan[] ReconnectDelays =
         [TimeSpan.Zero, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)];
 
-    private readonly object _sync = new();
+    private readonly SemaphoreSlim _lifecycle = new(1, 1);
     private CancellationTokenSource? _lifetimeCancellation;
     private Task? _receiveTask;
     private volatile bool _isConnected;
+    private bool _disposed;
 
     public event Action<IReadOnlyList<ChannelVolumeUpdate>>? VolumeChanged;
 
     public event Action<bool>? ConnectionStateChanged;
 
+    public event Action? ChatMixChanged;
+
     public bool IsConnected => _isConnected;
 
-    public void Start(Uri sonarHttpAddress)
+    public async Task StartAsync(Uri sonarHttpAddress, CancellationToken cancellationToken = default)
     {
         var socketAddress = CreateSocketAddress(sonarHttpAddress);
-        CancellationTokenSource cancellation;
-        lock (_sync)
+        await _lifecycle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            _lifetimeCancellation?.Cancel();
-            _lifetimeCancellation?.Dispose();
-            cancellation = new CancellationTokenSource();
-            _lifetimeCancellation = cancellation;
-            _receiveTask = Task.Run(() => RunReceiveLoopAsync(socketAddress, cancellation.Token));
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            await StopSessionAsync().ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            _lifetimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var token = _lifetimeCancellation.Token;
+            _receiveTask = Task.Run(() => RunReceiveLoopAsync(socketAddress, token));
         }
+        finally { _lifecycle.Release(); }
     }
 
     public async ValueTask DisposeAsync()
     {
-        Task? receiveTask;
-        lock (_sync)
+        await _lifecycle.WaitAsync().ConfigureAwait(false);
+        try
         {
-            _lifetimeCancellation?.Cancel();
-            receiveTask = _receiveTask;
+            if (_disposed) return;
+            _disposed = true;
+            await StopSessionAsync().ConfigureAwait(false);
         }
+        finally { _lifecycle.Release(); }
+    }
 
-        if (receiveTask is not null)
+    private async Task StopSessionAsync()
+    {
+        _lifetimeCancellation?.Cancel();
+        try
         {
-            try
-            {
-                await receiveTask.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
+            if (_receiveTask is not null) await _receiveTask.ConfigureAwait(false);
         }
-
-        lock (_sync)
+        catch (OperationCanceledException) { }
+        finally
         {
             _lifetimeCancellation?.Dispose();
             _lifetimeCancellation = null;
             _receiveTask = null;
+            SetConnected(false);
         }
-
-        SetConnected(false);
     }
 
     internal static Uri CreateSocketAddress(Uri sonarHttpAddress)
@@ -146,6 +149,7 @@ public sealed class SonarEventClient : IAsyncDisposable
                 failureCount = 0;
                 SetConnected(true);
                 await ReceiveMessagesAsync(socket, cancellationToken).ConfigureAwait(false);
+                failureCount++;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -164,31 +168,21 @@ public sealed class SonarEventClient : IAsyncDisposable
 
     private async Task ReceiveMessagesAsync(ClientWebSocket socket, CancellationToken cancellationToken)
     {
-        var buffer = new byte[16 * 1024];
         while (socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
-            using var message = new MemoryStream();
-            WebSocketReceiveResult result;
-            do
-            {
-                result = await socket.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
-                if (result.MessageType == WebSocketMessageType.Close)
-                {
-                    return;
-                }
-
-                await message.WriteAsync(buffer.AsMemory(0, result.Count), cancellationToken).ConfigureAwait(false);
-            }
-            while (!result.EndOfMessage);
-
-            if (result.MessageType != WebSocketMessageType.Text)
-            {
-                continue;
-            }
+            var json = await SonarMessageReader.ReadAsync(socket, cancellationToken).ConfigureAwait(false);
+            if (json is null) return;
+            if (json.Length == 0) continue;
 
             try
             {
-                var updates = ParseVolumeEvent(Encoding.UTF8.GetString(message.GetBuffer(), 0, checked((int)message.Length)));
+                using var document = JsonDocument.Parse(json);
+                if (document.RootElement.TryGetProperty("event", out var eventName) &&
+                    eventName.GetString() == "EVENT_SONAR_CHATMIX_DATA")
+                {
+                    ChatMixChanged?.Invoke();
+                }
+                var updates = ParseVolumeEvent(json);
                 if (updates.Count > 0)
                 {
                     VolumeChanged?.Invoke(updates);

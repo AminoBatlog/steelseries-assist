@@ -6,6 +6,21 @@ using SteelSeriesAssist.Sonar;
 
 var tests = new List<(string Name, Func<Task> Run)>
 {
+    ("Operation scope cancels and waits for async cleanup", OperationScopeTests.StopWaitsForContinuations),
+    ("Operation scope waits for all admitted work", OperationScopeTests.ScopeWaitsForEveryOperation),
+    ("Volume writer stops admission and drains on disposal", OperationScopeTests.WriterStopsAdmissionAndWaits),
+    ("Event inbox bounds a 50000-event burst and merges partial state", UpdateInboxTests.BurstPreservesLatestPartialState),
+    ("Event inbox retains hidden state and stops after disposal", UpdateInboxTests.HiddenAndDisposedDoNotPost),
+    ("Event client serializes 300 restarts and disposal", EventClientTests.RestartAndDispose),
+    ("Event reader bounds fragmented messages", EventClientTests.FragmentBoundaries),
+    ("Event reader times out fragments but permits idle", EventClientTests.FragmentTimeoutAndIdle),
+    ("Event reader cancels pending receive", EventClientTests.ReaderCancellation),
+    ("Optional channels follow active virtual devices", OptionalChannelsFollowVirtualDevices),
+    ("ChatMix falls back and confirms query writes", ChatMixTests.RoundTripAndFallback),
+    ("ChatMix rejects unconfirmed writes", ChatMixTests.RejectsUnconfirmedWrite),
+    ("ChatMix respects hardware control", ChatMixTests.HardwareControlIsReadOnly),
+    ("ChatMix rejects invalid balances", ChatMixTests.RejectsInvalidValues),
+    ("ChatMix does not mask server failures", ChatMixTests.DoesNotFallbackOnServerFailure),
     ("Composite discovery falls back", CompositeDiscoveryFallsBack),
     ("TCP discovery finds a Sonar-shaped listener", TcpDiscoveryFindsListener),
     ("Sonar client rejects non-loopback endpoints", ClientRejectsRemoteEndpoint),
@@ -34,6 +49,24 @@ foreach (var test in tests)
 }
 
 return failures == 0 ? 0 : 1;
+
+static Task OptionalChannelsFollowVirtualDevices()
+{
+    AudioDevice[] devices =
+    [
+        new("Physical media", "physical", "render", "media", "active", false),
+        new("Disabled aux", "disabled", "render", "aux", "disabled", true),
+        new("Capture media", "capture", "capture", "media", "active", true)
+    ];
+    Assert(!SonarChannelAvailability.IsVisible("media", devices), "A physical or capture device enabled Media.");
+    Assert(!SonarChannelAvailability.IsVisible("aux", devices), "A disabled virtual device enabled Aux.");
+    Assert(SonarChannelAvailability.IsVisible("master", devices), "Master was hidden.");
+    AudioDevice[] enabled = [.. devices, new("Sonar media", "media", "render", "media", "active", true)];
+    Assert(SonarChannelAvailability.IsVisible("media", enabled), "Enabling the virtual endpoint did not restore Media.");
+    Assert(!SonarChannelAvailability.IsVisible("aux", enabled), "Enabling Media also enabled Aux.");
+    Assert(!SonarChannelAvailability.IsVisible("media", []), "A removed virtual endpoint left Media visible.");
+    return Task.CompletedTask;
+}
 
 static async Task CompositeDiscoveryFallsBack()
 {
