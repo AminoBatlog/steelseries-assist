@@ -1,10 +1,13 @@
 # 更新日志
 
-## 未发布
+## 0.0.7 - 2026-11-20
 
 ### 修复
 
-- 修复点击托盘图标时程序直接退出、弹出 “System.DllNotFoundException: Dll was not found…Penimc…WispLogic.RegisterHwndForInput” 的问题：面板定位不再调用 `WindowInteropHelper.EnsureHandle()` 提前创建窗口句柄（该调用会在 `Show()` 之前初始化 WPF 的笔/触控输入栈，在缺少相关原生组件的机器上直接崩溃），改为先 `Show()` 再定位；
+- 修复点击托盘图标时程序直接退出、弹出 “System.DllNotFoundException: Dll was not found…Penimc…WispLogic.RegisterHwndForInput” 的问题：面板定位不再调用 `WindowInteropHelper.EnsureHandle()` 提前创建窗口句柄（该调用会在 `Show()` 之前初始化 WPF 的笔/触控输入栈，在缺少相关原生组件的机器上直接崩溃），改为先 `Show()` 再定位。
+
+### 改进
+
 - 面板显示流程改为可测试的 `PanelPresenter` + `IShellWindow`，支持“先显示、后定位、再激活”；显示失败时在托盘气泡中提示，不再让异常终止进程；
 - 托盘图标双击与单击都会切换面板，避免与系统双击手势冲突时面板不出现；
 - `--smoke-test` 增加 `--smoke-result` 参数，输出面板是否成功显示，便于自动化验证。
@@ -12,8 +15,6 @@
 ### 测试
 
 - 自动测试扩展至 32 项：新增面板定位的 DPI 缩放、小工作区裁剪、先显示后定位、显示前不读取句柄等回归用例。
-
-## 0.0.7 - 2026-11-04
 
 ### 新功能
 

@@ -1,10 +1,12 @@
 # 当前开发状态
 
-更新时间：2026-11-04
+更新时间：2026-11-20
 
-当前版本：0.0.7
+当前版本：0.0.7（含 2026-11-20 托盘面板崩溃修复，未变更版本号）
 
 ## 已完成
+
+- 修复点击托盘图标时因 `EnsureHandle()` 提前初始化 WPF 笔/触控输入栈导致的 `DllNotFoundException` 退出：面板改为先 `Show()` 再定位，定位逻辑拆分为 `PanelPresenter` + `IShellWindow` 并可单元测试；面板创建失败只提示不退出，托盘双击同样切换面板；32 项测试通过，详见 `docs/plans/panel-placement.md`；
 
 - 重整后台资源生命周期：WebSocket 串行启停、有界消息组帧、UI 最新状态合并、窗口与 ChatMix 在途工作取消和异步退出；25 项测试及本地延迟请求下的生命周期验证，详见 `docs/plans/resource-lifecycle.md`；
 

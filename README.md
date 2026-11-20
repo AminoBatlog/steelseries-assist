@@ -52,3 +52,15 @@ dotnet run --project src/SteelSeriesAssist.Probe -- --verify-current-writes
 ```powershell
 dotnet run --project src/SteelSeriesAssist.App -- --smoke-test
 ```
+
+追加 `--smoke-result` 可在退出前输出面板是否成功显示，适合发布前在无交互环境下验证：
+
+```powershell
+dotnet run --project src/SteelSeriesAssist.App -- --smoke-test --smoke-result
+```
+
+若仓库内的 `NuGet.Config` 清空了包源，发布自包含单文件包时需要显式指定源：
+
+```powershell
+dotnet publish src/SteelSeriesAssist.App -c Release -p:PublishProfile=win-x64 -p:RestoreSources=https://api.nuget.org/v3/index.json
+```
