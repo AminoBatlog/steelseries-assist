@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
+using SteelSeriesAssist.App;
 using SteelSeriesAssist.Application;
 using SteelSeriesAssist.Domain;
 using SteelSeriesAssist.Sonar;
@@ -30,7 +31,14 @@ var tests = new List<(string Name, Func<Task> Run)>
     ("Sonar event client ignores unrelated events", EventClientIgnoresUnrelatedEvent),
     ("Virtual endpoint mapping selects the correct data flow", VirtualEndpointMappingSelectsDataFlow),
     ("Slider track clicks map to absolute volume", SliderTrackClicksMapToVolume),
-    ("Volume writes collapse intermediate values", VolumeWritesCollapseIntermediateValues)
+    ("Volume writes collapse intermediate values", VolumeWritesCollapseIntermediateValues),
+    ("Panel placement derives bottom-right bounds", PanelPlacementTests.BuildsPlacementBeforeAnyShow),
+    ("Panel placement follows monitor DPI", PanelPlacementTests.ScalesWithMonitorDpi),
+    ("Panel placement clamps small work areas", PanelPlacementTests.ClampsToSmallWorkAreas),
+    ("Panel shows once and then places", PanelPlacementTests.ShowNeverPlacesBeforeHandleCreation),
+    ("Panel placement tolerates a missing handle", PanelPlacementTests.ShowWaitsUntilTheHandleExists),
+    ("Panel reposition skips hidden windows", PanelPlacementTests.RepositionSkipsHiddenPanels),
+    ("Panel never forces a handle before show", PanelPlacementTests.PlacementNeverForcesAHandleBeforeShow)
 };
 
 var failures = 0;

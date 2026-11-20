@@ -10,6 +10,7 @@ public partial class App : System.Windows.Application
     private Forms.NotifyIcon? _trayIcon;
     private Icon? _applicationIcon;
     private MainWindow? _mainWindow;
+    private WpfShellWindow? _shell;
     private Mutex? _singleInstanceMutex;
     private Forms.ContextMenuStrip? _trayMenu;
     private bool _isExiting;
@@ -31,9 +32,10 @@ public partial class App : System.Windows.Application
         }
 
         _mainWindow = new MainWindow();
+        _shell = new WpfShellWindow(_mainWindow);
         _mainWindow.DpiChanged += (_, _) => Dispatcher.BeginInvoke(() =>
         {
-            if (_mainWindow?.IsVisible == true) PanelPlacement.Place(_mainWindow, atCursor: false);
+            if (_shell is not null) PanelPresenter.Reposition(_shell, atCursor: false);
         });
         _mainWindow.HideOnDeactivate = !isSmokeTest;
         MainWindow = _mainWindow;
@@ -90,6 +92,7 @@ public partial class App : System.Windows.Application
                 TogglePanel();
             }
         };
+        _trayIcon.DoubleClick += (_, _) => TogglePanel();
 
         // Start discovery while the program is quietly resident in the tray, so opening the
         // panel later usually reuses an already warm Sonar connection and EQ cache.
@@ -102,6 +105,13 @@ public partial class App : System.Windows.Application
             timer.Tick += (_, _) =>
             {
                 timer.Stop();
+                // Give a headless launch a machine-readable result so CI and manual
+                // verification can tell "panel opened" from "panel failed to open".
+                if (e.Args.Contains("--smoke-result", StringComparer.OrdinalIgnoreCase))
+                {
+                    Console.WriteLine($"smoke-test: panel visible = {_mainWindow?.IsVisible == true}");
+                }
+
                 ExitApplication();
             };
             timer.Start();
@@ -138,15 +148,23 @@ public partial class App : System.Windows.Application
 
     private void ShowPanel()
     {
-        if (_mainWindow is null)
+        if (_mainWindow is null || _shell is null)
         {
             return;
         }
 
-        PanelPlacement.Place(_mainWindow, atCursor: true);
-        _mainWindow.Show();
-        PanelPlacement.Place(_mainWindow, atCursor: true);
-        _mainWindow.Activate();
+        try
+        {
+            PanelPresenter.Show(_shell, atCursor: true);
+        }
+        catch (Exception exception)
+        {
+            // The tray app must survive a failed panel creation: report it in a balloon
+            // instead of letting an unhandled WPF exception end the process.
+            _trayIcon?.ShowBalloonTip(8000, "无法打开控制面板", exception.Message, Forms.ToolTipIcon.Error);
+            return;
+        }
+
         _mainWindow.LoadSonarStateAsync();
     }
 
